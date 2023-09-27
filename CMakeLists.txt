@@ -1,4 +1,4 @@
-project(xtts.cpp)
+project(vallex.cpp)
 cmake_minimum_required(VERSION 3.11)
 
 add_definitions(-std=c++11)
@@ -8,11 +8,11 @@ include(ggml)
 
 include_directories(${ggml_SOURCE_DIR}/include/ggml)
 
-add_library(xtts
+add_library(vallex
             SHARED
-            xtts.cpp
-            xtts.h
+            vallex.cpp
+            vallex.h
 )
 
-target_include_directories(xtts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(xtts ggml ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(vallex PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(vallex ggml ${CMAKE_THREAD_LIBS_INIT})
