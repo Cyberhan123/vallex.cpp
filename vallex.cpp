@@ -376,85 +376,137 @@
 //                                           'ar_language_embedding.word_embeddings.weight', 
 //                                           'nar_language_embedding.word_embeddings.weight'])
 
-VALLF :: VALLF(
-            int d_model,
-            int nhead,
-            int num_layers,
-            bool norm_first = true,
-            bool add_prenet = false,
-            TransformerDecoder *decoder_cls = nullptr,
-            TransformerDecoderLayer *decoder_layer_cls = nullptr,
-            int prefix_mode = 0,
-            bool share_embedding = true,
-            float nar_scale_factor = 1.0,
-            bool prepend_bos = true,
-            int num_token = 1024,
-            int num_quantizers = 8
-) 
+VALLF::VALLF(
+	int d_model,
+	int nhead,
+	int num_layers,
+	bool norm_first = true,
+	bool add_prenet = false,
+	TransformerDecoder* decoder_cls,
+	TransformerDecoderLayer* decoder_layer_cls,
+	int prefix_mode = 0,
+	bool share_embedding = true,
+	float nar_scale_factor = 1.0,
+	bool prepend_bos = true,
+	int num_token = 1024,
+	int num_quantizers = 8
+)
 {
 
-        nar_d_model = int(d_model * nar_scale_factor);
-        ar_text_embedding = new TokenEmbedding(d_model, num_token);
-        nar_text_embedding = new TokenEmbedding(nar_d_model, num_token);
-        ar_audio_prepend_bos = prepend_bos;
+	nar_d_model = int(d_model * nar_scale_factor);
+	ar_text_embedding = new TokenEmbedding(d_model, num_token);
+	nar_text_embedding = new TokenEmbedding(nar_d_model, num_token);
+	ar_audio_prepend_bos = prepend_bos;
 
-        if (add_prenet) {
-            /* code */
-        } else {
-            ar_text_prenet = nullptr;
-            nar_audio_prenet = nullptr;
-        }
+	if (add_prenet) {
+		/* code */
+	}
+	else {
+		ar_text_prenet = nullptr;
+		nar_audio_prenet = nullptr;
+	}
 
-        ar_text_position = new SinePositionalEmbedding(d_model,
-                                                       0.1,
-                                                       false,
-                                                       true);
-        ar_audio_position = new SinePositionalEmbedding(nar_d_model,
-                                                        0.1,
-                                                        false,
-                                                        true);
-        ar_decoder = new TransformerDecoder();
-        ar_predict_layer = new TransformerDecoderLayer();
-//        rng = random.Random(0)
-        num_heads = nhead;
-        prefix_mode = prefix_mode;
-        num_quantizers = num_quantizers;
-    }
+	ar_text_position = new SinePositionalEmbedding(
+		d_model,
+		0.1,
+		false,
+		true
+	);
+
+	ar_audio_position = new SinePositionalEmbedding(
+		nar_d_model,
+		0.1,
+		false,
+		true
+	);
+	ar_decoder = new TransformerDecoder();
+	ar_predict_layer = new TransformerDecoderLayer();
+	//        rng = random.Random(0)
+	num_heads = nhead;
+	prefix_mode = prefix_mode;
+	num_quantizers = num_quantizers;
+
+	if (num_quantizers > 1)
+	{
+		//TODO init
+		nar_audio_embeddings = nullptr;
+
+		nar_text_position = new SinePositionalEmbedding(
+			nar_d_model,
+			0.1,
+			false,
+			false
+		);
+		//TODO init
+		nar_decoder = nullptr;
+		//TODO init
+		nar_predict_layers = nullptr;
+		//TODO init
+		nar_stage_embeddings = nullptr;
+
+		if (share_embedding)
+		{
+			/* code */
+		}
+
+	}
+}
 
 
 
 bool VALLF::load_model_from_file()
 {
-    return false;
+	return false;
 }
 
 VALLE::VALLE(
-    int d_model,
-    int nhead,
-    int num_layers, 
-    bool norm_first, 
-    bool add_prenet,
-    TransformerDecoder* decoder_cls,
-    TransformerDecoderLayer* decoder_layer_cls,
-    int prefix_mode, bool share_embedding, 
-    float nar_scale_factor, bool prepend_bos,
-    int num_token, 
-    int num_quantizers
+	int d_model,
+	int nhead,
+	int num_layers,
+	bool norm_first,
+	bool add_prenet,
+	int prefix_mode,
+	bool share_embedding,
+	float nar_scale_factor,
+	bool prepend_bos,
+	int num_token,
+	int num_quantizers
+) :VALLF(
+	d_model,
+	nhead,
+	num_layers,
+	norm_first,
+	add_prenet,
+	new TransformerEncoder(),
+	new TransformerEncoderLayer(),
+	prefix_mode,
+	share_embedding,
+	nar_scale_factor,
+	prepend_bos,
+	num_token,
+	num_quantizers
 )
 {
+	ar_language_embedding = new TokenEmbedding(d_model, language_ID.size());
+	nar_language_embedding = new TokenEmbedding(d_model, language_ID.size());
 }
 
 ggml_tensor* VALLE::inference(
-    ggml_tensor* x,
-    ggml_tensor* x_lens,
-    ggml_tensor* y,
-    ggml_tensor* enroll_x_lens,
-    int	top_k = -100,
-    float temperature = 1.0,
-    std::string prompt_language,
-    std::string	text_language,
-    int best_of = 1,
-    float	length_penalty = 1.0,
-    bool return_worst = false, )
+	ggml_tensor* x,
+	ggml_tensor* x_lens,
+	ggml_tensor* y,
+	ggml_tensor* enroll_x_lens,
+	int	top_k = -100,
+	float temperature = 1.0,
+	std::string prompt_language,
+	std::string	text_language,
+	int best_of = 1,
+	float	length_penalty = 1.0,
+	bool return_worst = false
+)
 {
+	const auto text = x;
+	auto x_embedding = ar_language_embedding->forward(text);
+	//	auto	prompt_language_id
+
 }

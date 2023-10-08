@@ -2,25 +2,41 @@
 #ifndef EMBEDDING_H
 #define EMBEDDING_H
 
-#include "ggml.h"
+#include <math.h>
+
+#include "ggml/ggml.h"
 
 class SinePositionalEmbedding {
 public:
-    SinePositionalEmbedding(int d_model, float dropout, bool scale, bool normalize);
+	SinePositionalEmbedding(
+		int d_model,
+		float dropout = 0.0,
+		bool scale = false,
+		bool normalize = false
+	);
+
+private:
+	int dim_model;
+	float x_scale;
+	ggml_tensor* alpha;
+	void* dropout;
+	bool reverse;
+	ggml_tensor* pe;
 };
 
 class TokenEmbedding {
 public:
-    int d_model;
-    int num_token;
-    float dropout;
-    ggml_tensor *data;
+	TokenEmbedding(int d_model, int num_token, float dropout = 0.0);
 
-    TokenEmbedding(int d_model, int num_token, float dropout = 0.0);
+	void set_data(ggml_tensor* data);
 
-    void set_data(ggml_tensor *data);
+	ggml_tensor* forward(ggml_tensor* x);
 
-    ggml_tensor *embedding();
+private:
+	int d_model;
+	int num_token;
+	float dropout;
+	ggml_tensor* data;
 };
 
 #endif

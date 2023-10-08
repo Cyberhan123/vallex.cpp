@@ -3,15 +3,14 @@
 #define VALLEX_H
 
 #include <string>
+#include <map>
 
 #include "embedding.h"
 #include "transformer.h"
-#include "ggml.h"
+#include "ggml/ggml.h"
 
 class VALLF {
 public:
-	
-
 	VALLF(
 		int d_model,
 		int nhead,
@@ -25,7 +24,8 @@ public:
 		float nar_scale_factor = 1.0,
 		bool prepend_bos = true,
 		int num_token = 1024,
-		int num_quantizers = 8);
+		int num_quantizers = 8
+	);
 
 	bool load_model_from_file();
 
@@ -46,6 +46,11 @@ private:
 	TransformerDecoderLayer* ar_predict_layer;
 	int num_heads;
 	int prefix_mode;
+	void* nar_audio_embeddings;
+	SinePositionalEmbedding* nar_text_position;
+	void* nar_decoder;
+	void* nar_predict_layers;
+	void* nar_stage_embeddings;
 };
 
 
@@ -57,14 +62,14 @@ public:
 		int num_layers,
 		bool norm_first = true,
 		bool add_prenet = false,
-		TransformerDecoder* decoder_cls = nullptr,
-		TransformerDecoderLayer* decoder_layer_cls = nullptr,
+
 		int prefix_mode = 0,
 		bool share_embedding = true,
 		float nar_scale_factor = 1.0,
 		bool prepend_bos = true,
 		int num_token = 1024,
-		int num_quantizers = 8);
+		int num_quantizers = 8
+	);
 
 	ggml_tensor* inference(
 		ggml_tensor* x,
@@ -77,8 +82,16 @@ public:
 		std::string	text_language,
 		int best_of = 1,
 		float	length_penalty = 1.0,
-		bool return_worst = false,
-		)
+		bool return_worst = false
+	);
+private:
+	const std::map<std::string, int> language_ID = std::map<std::string, int>{
+		{"en", 0},
+		{"zh", 1},
+		{"ja", 2}
+	};
+	TokenEmbedding* ar_language_embedding;
+	TokenEmbedding* nar_language_embedding;
 };
 
 #endif

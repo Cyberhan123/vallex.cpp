@@ -6,7 +6,7 @@ add_definitions(-std=c++11)
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 include(ggml)
 
-include_directories(${ggml_SOURCE_DIR}/include/ggml)
+include_directories(${ggml_SOURCE_DIR}/include)
 
 add_library(vallex
             SHARED
