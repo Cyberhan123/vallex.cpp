@@ -2,3 +2,5 @@
 *.pth
 *.bin
 *.gguf
+checkpoints/
+vocos-encodec-24khz/

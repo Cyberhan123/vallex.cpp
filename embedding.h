@@ -2,9 +2,9 @@
 #ifndef EMBEDDING_H
 #define EMBEDDING_H
 
-#include <math.h>
+#include <cmath>
 
-#include "ggml/ggml.h"
+#include <ggml/ggml.h>
 
 class SinePositionalEmbedding {
 public:
@@ -32,7 +32,7 @@ public:
 
 	ggml_tensor* forward(ggml_tensor* x);
 
-private:
+protected:
 	int d_model;
 	int num_token;
 	float dropout;

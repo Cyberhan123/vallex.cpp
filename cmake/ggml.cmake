@@ -1,4 +1,3 @@
-
 include(FetchContent)
 # FetchContent_MakeAvailable was not added until CMake 3.14
 if(${CMAKE_VERSION} VERSION_LESS 3.14)

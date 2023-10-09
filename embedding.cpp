@@ -1,34 +1,29 @@
 #include "embedding.h"
-#include "embedding.h"
 
 SinePositionalEmbedding::SinePositionalEmbedding(
-	int d_model,
-	float dropout = 0.0,
-	bool scale = false,
-	bool normalize = false
-)
-{
-	dim_model = dim_model
-		if (scale)
-		{
-			x_scale = std::sqrt(dim_model)
-		}
-		else {
-			x_scale = 1.0
-		}
+        int d_model,
+        float dropout,
+        bool scale,
+        bool normalize
+) {
+    this->dim_model = dim_model;
+    if (scale) {
+        this->x_scale = std::sqrt(dim_model);
+    } else {
+        this->x_scale = 1.0;
+    }
 }
 
 TokenEmbedding::TokenEmbedding(int d_model, int num_token, float dropout) {
-	d_model = d_model;
-	num_token = num_token;
-	dropout = dropout;
+    this->d_model = d_model;
+    this->num_token = num_token;
+    this->dropout = dropout;
 }
 
-void TokenEmbedding::set_data(ggml_tensor* view) {
-	data = view;
+void TokenEmbedding::set_data(ggml_tensor *view) {
+    data = view;
 }
 
-ggml_tensor* TokenEmbedding::forward(ggml_tensor* x)
-{
-	return nullptr;
+ggml_tensor *TokenEmbedding::forward(ggml_tensor *x) {
+    return nullptr;
 }
