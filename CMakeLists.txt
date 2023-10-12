@@ -19,7 +19,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 
-option(VALLEX_BUILD_SHARED_LIBRARY "vallex: build as a shared library" ON)
+option(VALLEX_BUILD_SHARED_LIBRARY "vallex: build as a shared library" OFF)
 option(VALLEX_STATIC "vallex: static link libraries" OFF)
 option(VALLEX_NATIVE "vallex: enable -march=native flag" OFF)
 option(VALLEX_LTO "vallex: enable link time optimization" OFF)
@@ -53,6 +53,8 @@ else ()
             vallex.cpp
             vallex.h
             tests/test_vallex.cpp
+            common.cpp
+            common.h
     )
 endif ()
 

@@ -51,6 +51,7 @@ private:
     void *nar_decoder;
     void *nar_predict_layers;
     void *nar_stage_embeddings;
+    int num_quantizers;
 };
 
 

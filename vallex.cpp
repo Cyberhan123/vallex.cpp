@@ -493,7 +493,7 @@ ggml_tensor *VALLE::inference(
         bool return_worst
 ) {
     const auto text = x;
-    auto x_embedding = ar_language_embedding->forward(text);
+//    auto x_embedding = ar_language_embedding->forward(text);
     //	auto	prompt_language_id
     return nullptr;
 }

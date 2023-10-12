@@ -3,40 +3,53 @@
 #define EMBEDDING_H
 
 #include <cmath>
-
+#include "common.h"
 #include <ggml/ggml.h>
 
-class SinePositionalEmbedding {
+
+class TokenEmbedding : public NN::Module<ggml_tensor *> {
 public:
-	SinePositionalEmbedding(
-		int d_model,
-		float dropout = 0.0,
-		bool scale = false,
-		bool normalize = false
-	);
+    explicit TokenEmbedding(int32_t d_model, size_t vocab_size);
 
-private:
-	int dim_model;
-	float x_scale;
-	ggml_tensor* alpha;
-	void* dropout;
-	bool reverse;
-	ggml_tensor* pe;
-};
+    size_t compute_params_mem_size(ggml_type wtype) override;
 
-class TokenEmbedding {
-public:
-	TokenEmbedding(int d_model, int num_token, float dropout = 0.0);
+    void init_params(struct ggml_context *ctx, ggml_type wtype) override;
 
-	void set_data(ggml_tensor* data);
+    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
 
-	ggml_tensor* forward(ggml_tensor* x);
+    struct ggml_tensor *forward(struct ggml_context *ctx, ggml_tensor *x) override;
 
 protected:
-	int d_model;
-	int num_token;
-	float dropout;
-	ggml_tensor* data;
+    int32_t d_model;
+    size_t vocab_size;
+    struct ggml_tensor *word_embeddings;
 };
+
+
+class SinePositionalEmbedding : public NN::Module<ggml_tensor *> {
+public:
+     SinePositionalEmbedding(
+            int d_model,
+            bool scale,
+            bool alpha
+    );
+
+    size_t compute_params_mem_size(ggml_type wtype) override;
+
+    void init_params(struct ggml_context *ctx, ggml_type wtype) override;
+
+    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
+
+    struct ggml_tensor *forward(struct ggml_context *ctx, ggml_tensor *x) override;
+
+private:
+    int dim_model{};
+    float x_scale{};
+    ggml_tensor *alpha{};
+    void *dropout{};
+    bool reverse{};
+    ggml_tensor *pe{};
+};
+
 
 #endif
