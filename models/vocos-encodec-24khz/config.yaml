@@ -1,0 +1,23 @@
+feature_extractor:
+  class_path: vocos.feature_extractors.EncodecFeatures
+  init_args:
+    encodec_model: encodec_24khz
+    bandwidths: [1.5, 3.0, 6.0, 12.0]
+    train_codebooks: false
+
+backbone:
+  class_path: vocos.models.VocosBackbone
+  init_args:
+    input_channels: 128
+    dim: 384
+    intermediate_dim: 1152
+    num_layers: 8
+    adanorm_num_embeddings: 4  # len(bandwidths)
+
+head:
+  class_path: vocos.heads.ISTFTHead
+  init_args:
+    dim: 384
+    n_fft: 1280
+    hop_length: 320
+    padding: same

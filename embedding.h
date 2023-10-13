@@ -17,7 +17,7 @@ public:
 
     void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
 
-    struct ggml_tensor *forward(struct ggml_context *ctx, ggml_tensor *x) override;
+    struct ggml_tensor *forward(struct ggml_graph_ctx *ctx, ggml_tensor *x) override;
 
 protected:
     int32_t d_model;
@@ -28,10 +28,9 @@ protected:
 
 class SinePositionalEmbedding : public NN::Module<ggml_tensor *> {
 public:
-     SinePositionalEmbedding(
+    SinePositionalEmbedding(
             int d_model,
-            bool scale,
-            bool alpha
+            bool scale
     );
 
     size_t compute_params_mem_size(ggml_type wtype) override;
@@ -40,15 +39,18 @@ public:
 
     void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
 
-    struct ggml_tensor *forward(struct ggml_context *ctx, ggml_tensor *x) override;
+    struct ggml_tensor *forward(struct ggml_graph_ctx *ctx, ggml_tensor *x) override;
+
+protected:
+    void extend_position_encodings(struct ggml_graph_ctx *ctx, ggml_tensor *x);
 
 private:
-    int dim_model{};
-    float x_scale{};
-    ggml_tensor *alpha{};
-    void *dropout{};
-    bool reverse{};
-    ggml_tensor *pe{};
+    int dim_model;
+    float x_scale;
+    ggml_tensor *alpha;
+    void *dropout;
+    bool reverse;
+    ggml_tensor *position_encodings;
 };
 
 
