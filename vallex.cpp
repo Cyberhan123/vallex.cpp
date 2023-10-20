@@ -406,16 +406,16 @@ VALLF::VALLF(
 
     this->ar_text_position = new SinePositionalEmbedding(
             d_model,
-            0.1,
-            false,
-            true
+            0.1
+//            false,
+//            true
     );
 
     this->ar_audio_position = new SinePositionalEmbedding(
             nar_d_model,
-            0.1,
-            false,
-            true
+            0.1
+//            false,
+//            true
     );
     this-> ar_decoder = new TransformerDecoder();
     this->ar_predict_layer = new TransformerDecoderLayer();
@@ -430,9 +430,9 @@ VALLF::VALLF(
 
         this->nar_text_position = new SinePositionalEmbedding(
                 nar_d_model,
-                0.1,
-                false,
-                false
+                0.1
+//                false,
+//                false
         );
         //TODO init
         this-> nar_decoder = nullptr;

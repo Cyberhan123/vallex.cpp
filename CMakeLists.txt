@@ -27,6 +27,7 @@ option(VALLEX_LTO "vallex: enable link time optimization" OFF)
 # ggml
 include(ggml)
 include_directories(${ggml_SOURCE_DIR}/include)
+set_target_properties(ggml PROPERTIES BUILD_SHARED_LIBS_DEFAULT OFF)
 set_target_properties(ggml PROPERTIES GGML_STANDALONE OFF)
 
 if (VALLEX_BUILD_SHARED_LIBRARY)
@@ -41,7 +42,7 @@ if (VALLEX_BUILD_SHARED_LIBRARY)
             vallex.h
     )
     set_target_properties(vallex PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_compile_definitions(vallex PRIVATE RWKV_SHARED RWKV_BUILD)
+    target_compile_definitions(vallex PRIVATE VALLEX_SHARED VALLEX_BUILD)
 else ()
     add_library(
             vallex

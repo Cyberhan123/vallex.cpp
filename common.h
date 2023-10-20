@@ -1,4 +1,5 @@
 #pragma once
+
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -8,7 +9,9 @@
 
 #include <string>
 #include <map>
-
+#include <vector>
+#include <any>
+#include <memory>
 
 enum LogLevel {
     DEBUG,
@@ -19,26 +22,25 @@ enum LogLevel {
 
 static auto log_level = LogLevel::INFO;
 
-#ifndef FILENAME__
-#define FILENAME__ "vallex.cpp"
-#endif
+#define FILENAME_ "vallex.cpp"
+
 
 #define LOGGER(level, format, ...)                                                                    \
     do {                                                                                              \
         if (level < log_level) {                                                                      \
             break;                                                                                    \
         }                                                                                             \
-        if (level == SDLogLevel::DEBUG) {                                                             \
-            printf("[DEBUG] %s:%-4d - " format "\n", FILENAME__, __LINE__, ##__VA_ARGS__);          \
+        if (level == LogLevel::DEBUG) {                                                             \
+            printf("[DEBUG] %s:%-4d - " format "\n", FILENAME_, __LINE__, ##__VA_ARGS__);          \
             fflush(stdout);                                                                           \
-        } else if (level == SDLogLevel::INFO) {                                                       \
-            printf("[INFO]  %s:%-4d - " format "\n", FILENAME__, __LINE__, ##__VA_ARGS__);          \
+        } else if (level == LogLevel::INFO) {                                                       \
+            printf("[INFO]  %s:%-4d - " format "\n", FILENAME_, __LINE__, ##__VA_ARGS__);          \
             fflush(stdout);                                                                           \
-        } else if (level == SDLogLevel::WARN) {                                                       \
-            fprintf(stderr, "[WARN]  %s:%-4d - " format "\n", FILENAME__, __LINE__, ##__VA_ARGS__); \
+        } else if (level == LogLevel::WARN) {                                                       \
+            fprintf(stderr, "[WARN]  %s:%-4d - " format "\n", FILENAME_, __LINE__, ##__VA_ARGS__); \
             fflush(stdout);                                                                           \
-        } else if (level == SDLogLevel::ERROR) {                                                      \
-            fprintf(stderr, "[ERROR] %s:%-4d - " format "\n", FILENAME__, __LINE__, ##__VA_ARGS__); \
+        } else if (level == LogLevel::ERROR) {                                                      \
+            fprintf(stderr, "[ERROR] %s:%-4d - " format "\n", FILENAME_, __LINE__, ##__VA_ARGS__); \
             fflush(stdout);                                                                           \
         }                                                                                             \
     } while (0)
@@ -48,6 +50,28 @@ static auto log_level = LogLevel::INFO;
 #define LOG_WARN(format, ...) LOGGER(LogLevel::WARN, format, ##__VA_ARGS__)
 #define LOG_ERROR(format, ...) LOGGER(LogLevel::ERROR, format, ##__VA_ARGS__)
 
+
+/**
+ * The model must have two step alloc buffer for model weight
+ * and alloc buffer for compute,the compute buffer can be rest but the model weight can't
+ * So in ggml they have different buffer and allocr, but they use same backend.
+ * */
+
+// hold model buffer
+class VallexGlobalContext {
+public:
+    VallexGlobalContext(size_t n_tensors, size_t buffer_size);
+
+    ggml_backend_t backend;
+    ggml_backend_buffer_t buffer;
+    struct ggml_context *context;
+    std::map<std::string, struct ggml_tensor *> tensors;
+};
+
+struct vallex_compute_context {
+    struct ggml_context *context;
+    struct ggml_allocr *allocr;
+};
 
 namespace NN {
     template<typename... Ts>
@@ -61,40 +85,22 @@ namespace NN {
         // mapping tensor struct to buff
         virtual void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) = 0;
 
-        virtual struct ggml_tensor *forward(struct ggml_graph_ctx *ctx, Ts... Args) = 0;
+        virtual struct ggml_tensor *forward(vallex_compute_context *ctx, Ts... Args) = 0;
     };
 }
 
 std::string get_system_info();
 
+struct ggml_tensor *
+ggml_vallex_arange_1d(struct vallex_compute_context *ctx, int start, int end, int step);
 
-//class LifeCycle {
-//public:
-//    explicit LifeCycle(ggml_init_params params);
-//
-//    bool to_gpu();
-//
-//    template<typename... Ts>  bool register_as(NN::Module<Ts> module, std::string name);
-//
-//    bool to_cpu();
-//
-//protected:
-//    struct ggml_backend *backend;
-//    struct ggml_context *ctx;
-//    struct ggml_allocr *allocr;
-//    int64_t t_start_us;
-//};
+struct ggml_tensor *
+ggml_vallex_arange_2d(struct vallex_compute_context *ctx, int start, int end, int step);
 
-struct ggml_graph_ctx {
-    struct ggml_context *ctx;
-    struct ggml_backend *backend;
-    struct ggml_allocr *allocr;
-};
+struct ggml_tensor *ggml_vallex_exp(struct ggml_context *ctx, struct ggml_tensor *a);
 
-struct ggml_tensor *ggml_arange_1d(struct ggml_graph_ctx *ctx, enum ggml_type type, int start, int end,int step);
+struct ggml_tensor *ggml_vallex_sin(struct ggml_context *ctx, struct ggml_tensor *a);
 
-struct ggml_tensor *ggml_arange_2d(struct ggml_graph_ctx *ctx, enum ggml_type type, int start, int end,int step);
-
-struct ggml_tensor *ggml_exp_1d(struct ggml_graph_ctx *ctx)
+struct ggml_tensor *ggml_vallex_cos(struct ggml_context *ctx, struct ggml_tensor *a);
 
 #endif

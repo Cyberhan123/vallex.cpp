@@ -9,7 +9,7 @@
 
 class TokenEmbedding : public NN::Module<ggml_tensor *> {
 public:
-    explicit TokenEmbedding(int32_t d_model, size_t vocab_size);
+    explicit TokenEmbedding(int64_t d_model, int64_t vocab_size);
 
     size_t compute_params_mem_size(ggml_type wtype) override;
 
@@ -17,11 +17,11 @@ public:
 
     void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
 
-    struct ggml_tensor *forward(struct ggml_graph_ctx *ctx, ggml_tensor *x) override;
+    struct ggml_tensor *forward(struct vallex_compute_context *ctx, ggml_tensor *x) override;
 
 protected:
-    int32_t d_model;
-    size_t vocab_size;
+    int64_t d_model;
+    int64_t vocab_size;
     struct ggml_tensor *word_embeddings;
 };
 
@@ -29,7 +29,7 @@ protected:
 class SinePositionalEmbedding : public NN::Module<ggml_tensor *> {
 public:
     SinePositionalEmbedding(
-            int d_model,
+            int64_t d_model,
             bool scale
     );
 
@@ -39,13 +39,15 @@ public:
 
     void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override;
 
-    struct ggml_tensor *forward(struct ggml_graph_ctx *ctx, ggml_tensor *x) override;
+    struct ggml_tensor *forward(struct vallex_compute_context *ctx, ggml_tensor *x) override;
+
+    struct ggml_tensor * extend_position_encodings(struct vallex_compute_context *ctx, ggml_tensor *x);
 
 protected:
-    void extend_position_encodings(struct ggml_graph_ctx *ctx, ggml_tensor *x);
+
 
 private:
-    int dim_model;
+    int64_t dim_model;
     float x_scale;
     ggml_tensor *alpha;
     void *dropout;
