@@ -41,7 +41,7 @@ public:
 
     struct ggml_tensor *forward(struct vallex_compute_context *ctx, ggml_tensor *x) override;
 
-    struct ggml_tensor * extend_position_encodings(struct vallex_compute_context *ctx, ggml_tensor *x);
+    struct ggml_tensor *extend_position_encodings(struct vallex_compute_context *ctx, ggml_tensor *x);
 
 protected:
 
@@ -50,8 +50,8 @@ private:
     int64_t dim_model;
     float x_scale;
     ggml_tensor *alpha;
-    void *dropout;
-    bool reverse;
+//    void *dropout;
+//    bool reverse;
     ggml_tensor *position_encodings;
 };
 

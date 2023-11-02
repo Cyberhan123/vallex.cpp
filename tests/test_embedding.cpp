@@ -55,7 +55,7 @@ void vallex_test_compute(const struct vallex_test_context *ctx, ggml_tensor *dis
     ggml_allocr_alloc_graph(ctx->allocr, ctx->gf);
 
     if (ggml_backend_is_cpu(ctx->backend)) {
-        ggml_backend_cpu_set_n_threads(ctx->backend, 1);
+        ggml_backend_cpu_set_n_threads(ctx->backend, 2);
     }
 
     ggml_backend_graph_compute(ctx->backend, ctx->gf);
@@ -210,7 +210,7 @@ TEST(SinePositionalEmbedding, extend_position_encodings) {
             ctx->context,
             ctx->allocr
     };
-    spe->extend_position_encodings(vallex_ctx, cur);
+    cur = spe->extend_position_encodings(vallex_ctx, cur);
     vallex_test_compute(ctx, cur);
 
     std::vector<float> tensor_data;

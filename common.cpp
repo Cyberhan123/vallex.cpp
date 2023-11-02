@@ -51,57 +51,47 @@ VallexGlobalContext::VallexGlobalContext(size_t n_tensors, size_t buffer_size) {
     this->buffer = ggml_backend_alloc_buffer(this->backend, buffer_size);
 }
 
+struct vallex_arange_params {
+    int64_t start;
+    int64_t end;
+    int step;
+};
 
-struct ggml_tensor *
-ggml_vallex_arange_1d(struct vallex_compute_context *ctx, int start, int end, int step) {
-    const auto tensor = ggml_new_tensor_1d(ctx->context, GGML_TYPE_F32, end);
-    ggml_allocr_alloc(ctx->allocr, tensor);
-    if (!ggml_allocr_is_measure(ctx->allocr)) {
-        std::vector<float> vec;
-
-        for (int i = start; i < end; i += step) {
-            vec.push_back(static_cast<float >(i));
-        };
-        ggml_backend_tensor_set(tensor, vec.data(), 0, ggml_nbytes(tensor));
-    }
-    return tensor;
-}
-
-struct ggml_tensor *
-ggml_vallex_arange_2d(struct vallex_compute_context *ctx, int start, int end, int step) {
-    const auto tensor = ggml_new_tensor_2d(ctx->context, GGML_TYPE_F32, end + 1, 1);
-    ggml_allocr_alloc(ctx->allocr, tensor);
-    if (!ggml_allocr_is_measure(ctx->allocr)) {
-        std::vector<std::vector<float>> vec;
-
-        for (int i = start; i < end; i += step) {
-            std::vector<float> each;
-            each.push_back(static_cast<float >(i));
-            vec.push_back(each);
-        };
-        ggml_backend_tensor_set(tensor, vec.data(), 0, ggml_nbytes(tensor));
-    }
-    return tensor;
-}
-
-static void ggml_vallex_sin(struct ggml_tensor *dst, const struct ggml_tensor *src, int ith, int nth, void *userdata) {
-    GGML_ASSERT(userdata == nullptr);
+static void
+ggml_vallex_arange_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int ith, int nth, void *userdata) {
+    GGML_ASSERT(userdata != nullptr);
     GGML_ASSERT(ggml_are_same_shape(dst, src));
     GGML_ASSERT(ggml_is_contiguous(dst));
     GGML_ASSERT(ggml_is_contiguous(src));
 
-    const float *src_data = ggml_get_data_f32(src);
+//    const float *src_data = ggml_get_data_f32(src);
     float *dst_data = ggml_get_data_f32(dst);
 
     const int ne = (int) ggml_nelements(dst);
     const int dr = (ne + nth - 1) / nth;
     const int ie0 = dr * ith;
     const int ie1 = std::min(ie0 + dr, ne);
+    const vallex_arange_params *params = (vallex_arange_params *) userdata;
 
-    for (int i = ie0; i < ie1; ++i) {
-        dst_data[i] = sinf(src_data[i]);
+    for (auto i = ie0; i < ie1; ++i) {
+        if (ie0 >= params->start && ie0 <= params->end) {
+            const auto r = ie0 * params->step;
+            dst_data[i] = static_cast<float>(r) ;
+        }
     }
 }
+
+
+struct ggml_tensor *
+ggml_vallex_arange(struct ggml_context *ctx, struct ggml_tensor *a, int64_t start, int64_t end, int step) {
+    const auto userdata = new vallex_arange_params{
+            start,
+            end,
+            step
+    };
+    return ggml_map_custom1(ctx, a, ggml_vallex_arange_impl, GGML_N_TASKS_MAX, userdata);
+}
+
 
 static void
 ggml_vallex_exp_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int ith, int nth, void *userdata) {
@@ -137,12 +127,12 @@ ggml_vallex_sin_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int
     const float *src_data = ggml_get_data_f32(src);
     float *dst_data = ggml_get_data_f32(dst);
 
-    const int ne = (int) ggml_nelements(dst);
-    const int dr = (ne + nth - 1) / nth;
-    const int ie0 = dr * ith;
-    const int ie1 = std::min(ie0 + dr, ne);
+    const auto ne = (int) ggml_nelements(dst);
+    const auto dr = (ne + nth - 1) / nth;
+    const auto ie0 = dr * ith;
+    const auto ie1 = std::min(ie0 + dr, ne);
 
-    for (int i = ie0; i < ie1; ++i) {
+    for (auto i = ie0; i < ie1; ++i) {
         dst_data[i] = sinf(src_data[i]);
     }
 }
@@ -173,6 +163,39 @@ ggml_vallex_cos_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int
 
 struct ggml_tensor *ggml_vallex_cos(struct ggml_context *ctx, struct ggml_tensor *a) {
     return ggml_map_custom1(ctx, a, ggml_vallex_cos_impl, GGML_N_TASKS_MAX, nullptr);
+}
+
+struct ggml_vallex_mul_num_params {
+    float num;
+};
+
+static void
+ggml_vallex_mul_num_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int ith, int nth, void *userdata) {
+    GGML_ASSERT(userdata != nullptr);
+    GGML_ASSERT(ggml_are_same_shape(dst, src));
+    GGML_ASSERT(ggml_is_contiguous(dst));
+    GGML_ASSERT(ggml_is_contiguous(src));
+
+    const float *src_data = ggml_get_data_f32(src);
+    float *dst_data = ggml_get_data_f32(dst);
+
+    const int ne = (int) ggml_nelements(dst);
+    const int dr = (ne + nth - 1) / nth;
+    const int ie0 = dr * ith;
+    const int ie1 = std::min(ie0 + dr, ne);
+
+    const ggml_vallex_mul_num_params *params = (ggml_vallex_mul_num_params *) userdata;
+
+    for (int i = ie0; i < ie1; ++i) {
+        dst_data[i] = src_data[i] * params->num;
+    }
+}
+
+struct ggml_tensor *ggml_vallex_mul_num(struct ggml_context *ctx, struct ggml_tensor *a, float b) {
+    const auto userdata = new ggml_vallex_mul_num_params{
+            b
+    };
+    return ggml_map_custom1(ctx, a, ggml_vallex_mul_num_impl, GGML_N_TASKS_MAX, userdata);
 }
 
 //struct ggml_tensor *ggml

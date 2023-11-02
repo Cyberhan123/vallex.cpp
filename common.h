@@ -91,16 +91,14 @@ namespace NN {
 
 std::string get_system_info();
 
-struct ggml_tensor *
-ggml_vallex_arange_1d(struct vallex_compute_context *ctx, int start, int end, int step);
-
-struct ggml_tensor *
-ggml_vallex_arange_2d(struct vallex_compute_context *ctx, int start, int end, int step);
+struct ggml_tensor *ggml_vallex_arange(struct ggml_context *ctx, struct ggml_tensor *a, int64_t start, int64_t end, int step);
 
 struct ggml_tensor *ggml_vallex_exp(struct ggml_context *ctx, struct ggml_tensor *a);
 
 struct ggml_tensor *ggml_vallex_sin(struct ggml_context *ctx, struct ggml_tensor *a);
 
 struct ggml_tensor *ggml_vallex_cos(struct ggml_context *ctx, struct ggml_tensor *a);
+
+struct ggml_tensor *ggml_vallex_mul_num(struct ggml_context *ctx, struct ggml_tensor *a, float b);
 
 #endif
