@@ -91,7 +91,8 @@ namespace NN {
 
 std::string get_system_info();
 
-struct ggml_tensor *ggml_vallex_arange(struct ggml_context *ctx, struct ggml_tensor *a, int64_t start, int64_t end, int step);
+struct ggml_tensor *
+ggml_vallex_arange(struct ggml_context *ctx, struct ggml_tensor *a, int64_t start, int64_t end, int step);
 
 struct ggml_tensor *ggml_vallex_exp(struct ggml_context *ctx, struct ggml_tensor *a);
 
@@ -100,5 +101,12 @@ struct ggml_tensor *ggml_vallex_sin(struct ggml_context *ctx, struct ggml_tensor
 struct ggml_tensor *ggml_vallex_cos(struct ggml_context *ctx, struct ggml_tensor *a);
 
 struct ggml_tensor *ggml_vallex_mul_num(struct ggml_context *ctx, struct ggml_tensor *a, float b);
+
+//https://github.com/pytorch/pytorch/blob/455241bbd3629fb5ff4360c91909c79256935c44/torch/csrc/api/include/torch/nn/functional/linear.h#L19
+struct ggml_tensor *ggml_vallex_linear(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_tensor *weight,
+                                       struct ggml_tensor *bias);
+
+struct ggml_tensor *
+ggml_vallex_masked_fill(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_tensor *mask, float value);
 
 #endif

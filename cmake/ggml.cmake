@@ -4,7 +4,7 @@ if(${CMAKE_VERSION} VERSION_LESS 3.14)
     include(add_FetchContent_MakeAvailable.cmake)
 endif()
 
-set(GGML_GIT_TAG  6549d12f2e3176050040a86334f17c001e170f13)
+set(GGML_GIT_TAG  239defe61dbe9dddc6304942e8a3d03d6a3c69ab)
 set(GGML_GIT_URL  https://github.com/Cyberhan123/ggml.git)
 
 FetchContent_Declare(

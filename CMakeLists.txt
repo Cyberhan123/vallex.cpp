@@ -38,8 +38,12 @@ if (VALLEX_BUILD_SHARED_LIBRARY)
             transformer.cpp
             embedding.h
             embedding.cpp
-            vallex.cpp
             vallex.h
+            vallex.cpp
+            common.h
+            common.cpp
+            activation.h
+            activation.cpp
     )
     set_target_properties(vallex PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(vallex PRIVATE VALLEX_SHARED VALLEX_BUILD)
@@ -51,11 +55,12 @@ else ()
             transformer.cpp
             embedding.h
             embedding.cpp
-            vallex.cpp
             vallex.h
-            tests/test_vallex.cpp
-            common.cpp
+            vallex.cpp
             common.h
+            common.cpp
+            activation.h
+            activation.cpp
     )
 endif ()
 

@@ -76,7 +76,7 @@ ggml_vallex_arange_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, 
     for (auto i = ie0; i < ie1; ++i) {
         if (ie0 >= params->start && ie0 <= params->end) {
             const auto r = ie0 * params->step;
-            dst_data[i] = static_cast<float>(r) ;
+            dst_data[i] = static_cast<float>(r);
         }
     }
 }
@@ -198,4 +198,60 @@ struct ggml_tensor *ggml_vallex_mul_num(struct ggml_context *ctx, struct ggml_te
     return ggml_map_custom1(ctx, a, ggml_vallex_mul_num_impl, GGML_N_TASKS_MAX, userdata);
 }
 
-//struct ggml_tensor *ggml
+struct ggml_tensor *ggml_vallex_linear(
+        struct ggml_context *ctx,
+        struct ggml_tensor *input,
+        struct ggml_tensor *weight,
+        struct ggml_tensor *bias
+) {
+    auto output = ggml_mul_mat(ctx, input, weight);
+    if (bias != nullptr) {
+        output = ggml_add(ctx, output, bias);
+    }
+    return output;
+};
+
+
+struct ggml_vallex_masked_fill_params {
+    float value;
+};
+
+
+static void
+ggml_vallex_masked_fill_impl(struct ggml_tensor *dst, const struct ggml_tensor *a, const struct ggml_tensor *b, int ith,
+                             int nth, void *userdata) {
+    GGML_ASSERT(userdata != nullptr);
+    GGML_ASSERT(ggml_are_same_shape(dst, a));
+    GGML_ASSERT(ggml_is_contiguous(dst));
+    GGML_ASSERT(ggml_is_contiguous(a));
+    GGML_ASSERT(ggml_is_contiguous(b));
+
+    const float *a_data = ggml_get_data_f32(a);
+    const float *b_data = ggml_get_data_f32(b);
+    float *dst_data = ggml_get_data_f32(dst);
+
+    const int a_ne = (int) ggml_nelements(dst);
+    const int a_dr = (a_ne + nth - 1) / nth;
+    const int a_ie0 = a_dr * ith;
+    const int a_ie1 = std::min(a_ie0 + a_dr, a_ne);
+
+    const ggml_vallex_masked_fill_params *params = (ggml_vallex_masked_fill_params *) userdata;
+
+    //TODO: check b shape if a,b are not same shape ,this code don't work.
+
+    for (int i = a_ie0; i < a_ie1; ++i) {
+        if (b_data[i] == 0.0f) {
+            dst_data[i] = params->value;
+            continue;
+        }
+        dst_data[i] = a_data[i];
+    }
+}
+
+struct ggml_tensor *
+ggml_vallex_masked_fill(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_tensor *mask, float value) {
+    const auto userdata = new ggml_vallex_masked_fill_params{
+            value
+    };
+    return ggml_map_custom2(ctx, input, mask, ggml_vallex_masked_fill_impl, GGML_N_TASKS_MAX, userdata);
+}

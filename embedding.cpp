@@ -141,8 +141,8 @@ SinePositionalEmbedding::extend_position_encodings(struct vallex_compute_context
 
 struct ggml_tensor *SinePositionalEmbedding::forward(struct vallex_compute_context *ctx, ggml_tensor *x) {
     this->extend_position_encodings(ctx, x);
-//    output = x.unsqueeze(-1) if x.ndim == 2 else x
-//        output = output * self.x_scale + self.alpha * self.pe[:, : x.size(1)]
+    //  output = x.unsqueeze(-1) if x.ndim == 2 else x
+    //  output = output * self.x_scale + self.alpha * self.pe[:, : x.size(1)]
     auto output = x;
     if (x->n_dims == 2) {
         output->n_dims = 1;
