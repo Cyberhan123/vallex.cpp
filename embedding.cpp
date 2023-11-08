@@ -27,7 +27,7 @@ void TokenEmbedding::init_params(struct ggml_context *ctx, ggml_type wtype) {
 }
 
 void TokenEmbedding::mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) {
-    tensors[prefix + ".word_embeddings.weight"] = word_embeddings;
+    tensors[prefix + ".word_embeddings.weight"] = this->word_embeddings;
 }
 
 

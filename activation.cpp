@@ -14,19 +14,28 @@ MultiheadAttention::MultiheadAttention(
         ggml_tensor *linear2_cls,
         ggml_type dtype
 ) {
-
+    this->embed_dim = embed_dim;
+    this->num_heads = num_heads;
 }
 
 size_t MultiheadAttention::compute_params_mem_size(ggml_type wtype) {
-    return 0;
+    float mem_size = static_cast<float > (this->num_heads * this->embed_dim) * ggml_type_sizef(wtype);
+    return static_cast<size_t>(mem_size);
+
 }
 
 void MultiheadAttention::init_params(struct ggml_context *ctx, ggml_type wtype) {
-
+    this->in_proj_weight = ggml_new_tensor_2d(ctx, wtype, this->embed_dim, this->num_heads);
+    this->in_proj_bias = ggml_new_tensor_1d(ctx, wtype, this->embed_dim);
+    this->out_proj_weight = ggml_new_tensor_2d(ctx, wtype, this->embed_dim, this->num_heads);
+    this->out_proj_bias = ggml_new_tensor_1d(ctx, wtype, this->embed_dim);
 }
 
 void MultiheadAttention::mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) {
-
+    tensors[prefix + ".in_proj_weight"] = this->in_proj_weight;
+    tensors[prefix + ".in_proj_bias"] = this->in_proj_weight;
+    tensors[prefix + ".out_proj_weight"] = this->in_proj_weight;
+    tensors[prefix + ".out_proj_bias"] = this->in_proj_weight;
 }
 
 struct ggml_vallex_split_tensor_2d_params {
@@ -59,6 +68,7 @@ ggml_vallex_split_tensor_2d(struct ggml_tensor *dst, const struct ggml_tensor *s
     for (auto i = ie0; i < ie1; ++i) {
         /*const int row = i / dst_ne0; //row index*/
         const auto column = i % dst_ne0; //column index
+        //TODO
 
 //        if (column == 0 || column % 2 == 0) {
 //            dst_data[i] = sin_data[column];
@@ -79,7 +89,9 @@ MultiheadAttention::forward(
         ggml_tensor *attn_mask,
         bool average_attn_weights,
         ggml_tensor *past_kv,
-        bool use_cache
+        bool use_cache,
+        ggml_tensor *k_cache,
+        ggml_tensor *v_cache
 ) {
     const auto B = x->ne[0];
     const auto T = x->ne[1];
@@ -111,9 +123,27 @@ MultiheadAttention::forward(
     V = ggml_permute(ctx->context, V, 0, 2, 1, 3);
 
     if (past_kv != nullptr) {
-        //TODO
+        //    past_key = past_kv[0]
+        //    past_value = past_kv[1]
+        //    k = torch.cat((past_key, k), dim=-2)
+        //    v = torch.cat((past_value, v), dim=-2)
+        const auto past_key = ggml_view_1d(ctx->context, past_kv, 1, 0);
+        const auto past_value = ggml_view_1d(ctx->context, past_kv, 1, sizeof(float));
+        //TODO: can we use ggml_cpy ??
+        K = ggml_vallex_cat(ctx->context, past_key, K, -2);
+        V = ggml_vallex_cat(ctx->context, past_value, V, -2);
+        //TODO: need call ggml_build_forward_expand ?
+
+        // ggml_build_forward_expand(gf,K);
+        // ggml_build_forward_expand(gf,V);
     }
     const auto FULL_T = K->ne[K->n_dims - 2];
+
+    if (use_cache) {
+        // should use view or not?
+        k_cache = ggml_view_tensor(ctx->context, K);
+        v_cache = ggml_view_tensor(ctx->context, V);
+    }
     //    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
     //    att = att.masked_fill(attn_mask[FULL_T - T:FULL_T, :FULL_T], float('-inf'))
     //    att = F.softmax(att, dim=-1)
@@ -126,7 +156,7 @@ MultiheadAttention::forward(
 
     const auto split_params = new ggml_vallex_split_tensor_2d_params{
             {FULL_T - T, FULL_T},
-            {0, FULL_T}
+            {0,          FULL_T}
     };
 
     attn_mask = ggml_map_custom1(ctx->context,
@@ -139,11 +169,21 @@ MultiheadAttention::forward(
     attn = ggml_soft_max(ctx->context, attn);
     attn = ggml_reshape_1d(ctx->context, attn, ggml_nelements(attn));
 
-    // y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+    // y = att @ v
     // y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
     // y = torch._C._nn.linear(y, opw, opb)
 
     auto y = ggml_mul(ctx->context, attn, V);
+    y = ggml_view_3d(
+            ctx->context,
+            ggml_cont(
+                    ctx->context,
+                    ggml_permute(ctx->context, y, 0, 2, 1, 3)),
+            B, T, C,
+            y->nb[1], y->nb[2],
+            0
+    );
+    y = ggml_vallex_linear(ctx->context, y, this->out_proj_weight, this->out_proj_bias);
 
-    return nullptr;
+    return y;
 }

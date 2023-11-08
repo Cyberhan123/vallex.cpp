@@ -255,3 +255,101 @@ ggml_vallex_masked_fill(struct ggml_context *ctx, struct ggml_tensor *input, str
     };
     return ggml_map_custom2(ctx, input, mask, ggml_vallex_masked_fill_impl, GGML_N_TASKS_MAX, userdata);
 }
+
+static void
+ggml_vallex_cat_impl(struct ggml_tensor *dst, const struct ggml_tensor *src0, const struct ggml_tensor *src1, int ith,
+                     int nth, void *userdata) {
+
+    GGML_ASSERT(src0->nb[0] == sizeof(float));
+    GGML_ASSERT(ggml_is_contiguous(dst));
+    GGML_ASSERT(ggml_is_contiguous(src0));
+    GGML_ASSERT(ggml_is_contiguous(src1));
+
+
+    GGML_TENSOR_LOCALS(int64_t, ne0, src0, ne);
+    GGML_TENSOR_LOCALS(size_t, nb0, src0, nb);
+    GGML_TENSOR_LOCALS(int64_t, ne1, src1, ne);
+    GGML_TENSOR_LOCALS(size_t, nb1, src1, nb);
+    GGML_TENSOR_LOCALS(int64_t, ne, dst, ne);
+    GGML_TENSOR_LOCALS(size_t, nb, dst, nb);
+
+    auto dim = *(int *) userdata;
+
+    const float *src0_data = ggml_get_data_f32(src0);
+    const float *src1_data = ggml_get_data_f32(src1);
+    float *dst_data = ggml_get_data_f32(dst);
+
+    // rest shape
+    dst->ne[dim] = src0->ne[dim] + src1->ne[dim];
+    // rest nb
+    dst->nb[0] = ggml_type_size(dst->type);
+    dst->nb[1] = dst->nb[0] * (dst->ne[0] / ggml_blck_size(dst->type));
+    for (int i = 2; i < GGML_MAX_DIMS; i++) {
+        dst->nb[i] = dst->nb[i - 1] * dst->ne[i - 1];
+    }
+
+
+    switch (src0->n_dims) {
+        case 1:
+            GGML_ASSERT(dim == 0);
+
+            //TODO
+            break;
+        case 2:
+            GGML_ASSERT(dim <= 1);
+            //TODO
+            break;
+        case 3:
+            GGML_ASSERT(dim <= 2);
+            //TODO
+            break;
+        case 4:
+            GGML_ASSERT(dim <= 3);
+            //TODO
+            break;
+    }
+//    for (int i3 = 0; i3 < ne3; i3++) {
+//        for (int i2 = ith; i2 < ne2; i2++) {
+//            if (i2 < ne02) { // src0
+//                for (int i1 = 0; i1 < ne1; i1++) {
+//                    for (int i0 = 0; i0 < ne0; i0++) {
+//                        const float *x = (float *) ((char *) src0->data + i0 * nb00 + i1 * nb01 + i2 * nb02 +
+//                                                    i3 * nb03);
+//
+//                        float *y = (float *) ((char *) dst->data + i0 * nb0 + i1 * nb1 + i2 * nb2 + i3 * nb3);
+//                        *y = *x;
+//                    }
+//                }
+//            } // src1
+//            else {
+//                for (int i1 = 0; i1 < ne1; i1++) {
+//                    for (int i0 = 0; i0 < ne0; i0++) {
+//                        const float *x = (float *) ((char *) src1->data + i0 * nb10 + i1 * nb11 + (i2 - ne02) * nb12 +
+//                                                    i3 * nb13);
+//
+//                        float *y = (float *) ((char *) dst->data + i0 * nb0 + i1 * nb1 + i2 * nb2 + i3 * nb3);
+//                        *y = *x;
+//                    }
+//                }
+//            }
+//        }
+//    }
+}
+
+struct ggml_tensor *
+ggml_vallex_cat(struct ggml_context *ctx, struct ggml_tensor *a, struct ggml_tensor *b, int dim) {
+
+    if (dim < 0) {
+        dim = a->n_dims + dim;
+    }
+    GGML_ASSERT(a->n_dims >= dim);
+    GGML_ASSERT(a->n_dims == b->n_dims);
+    // check shape
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        if (i == dim) continue;
+        GGML_ASSERT(a->ne[i] == b->ne[i]);
+    }
+    GGML_ASSERT(dim <= GGML_MAX_DIMS);
+    GGML_ASSERT(-GGML_MAX_DIMS <= dim);
+    return ggml_map_custom2(ctx, a, b, ggml_vallex_masked_fill_impl, GGML_N_TASKS_MAX, &dim);
+};

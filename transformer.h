@@ -52,6 +52,25 @@ public:
             /*tgt_key_padding_mask: Optional[Tensor] = None,*/      ggml_tensor *tgt_key_padding_mask,
             /*memory_key_padding_mask: Optional[Tensor] = None,*/   ggml_tensor *memory_key_padding_mask
     ) override;
+
+    bool norm_first;
+private:
+    struct ggml_tensor *self_attention_block(
+            vallex_compute_context *ctx,
+            ggml_tensor *x,
+            ggml_tensor *attn_mask,
+            ggml_tensor *key_padding_mask
+    );
+
+    struct ggml_tensor *multihead_attention_block(
+            vallex_compute_context *ctx,
+            ggml_tensor *x,
+            ggml_tensor *mem,
+            ggml_tensor *attn_mask,
+            ggml_tensor *key_padding_mask
+    );
+
+    struct ggml_tensor * feed_forward_block(vallex_compute_context *ctx, ggml_tensor *x);
 };
 
 

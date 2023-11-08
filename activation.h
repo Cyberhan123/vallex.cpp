@@ -11,7 +11,9 @@ class MultiheadAttention : public NN::Module<
         /*attn_mask: Optional[Tensor] = None,*/         ggml_tensor *,
         /*average_attn_weights: bool = True,*/          bool,
         /*past_kv = None,*/                             ggml_tensor *,
-        /*use_cache = False*/                           bool
+        /*use_cache = False*/                           bool,
+        /* k_cache*/                                    ggml_tensor *,
+        /* v_cache */                                   ggml_tensor *
 > {
 
 public:
@@ -47,13 +49,16 @@ public:
             /*attn_mask: Optional[Tensor] = None,*/         ggml_tensor *attn_mask,
             /*average_attn_weights: bool = True,*/          bool average_attn_weights,
             /*past_kv = None,*/                             ggml_tensor *past_kv,
-            /*use_cache = False*/                           bool use_cache
+            /*use_cache = False*/                           bool use_cache,
+            ggml_tensor *k_cache,
+            ggml_tensor *v_cache
     ) override;
 
     struct ggml_tensor *in_proj_weight;
     struct ggml_tensor *in_proj_bias;
     struct ggml_tensor *out_proj_weight;
     struct ggml_tensor *out_proj_bias;
+    int64_t embed_dim;
     int64_t num_heads;
 };
 
