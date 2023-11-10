@@ -23,15 +23,15 @@ from scaling import BasicNorm as _BasicNorm
 class TokenEmbedding(nn.Module):
     def __init__(
             self,
-            dim_model: int,
+            n_dim: int,
             vocab_size: int,
     ):
         super().__init__()
 
         self.vocab_size = vocab_size
-        self.dim_model = dim_model
+        self.n_dim = n_dim
 
-        self.word_embeddings = nn.Embedding(self.vocab_size, self.dim_model)
+        self.word_embeddings = nn.Embedding(self.vocab_size, self.n_dim)
 
     @property
     def weight(self) -> torch.Tensor:
@@ -48,29 +48,26 @@ class TokenEmbedding(nn.Module):
 class SinePositionalEmbedding(nn.Module):
     def __init__(
             self,
-            dim_model: int,
+            n_dim: int,
             dropout: float = 0.0,
-            scale: bool = False,
-            alpha: bool = False,
+            alpha: bool = True,
     ):
         super().__init__()
-        self.dim_model = dim_model
-        self.x_scale = math.sqrt(dim_model) if scale else 1.0
+        self.n_dim = n_dim
+        self.x_scale = 1.0
         self.alpha = nn.Parameter(torch.ones(1), requires_grad=alpha)
         self.dropout = torch.nn.Dropout(p=dropout)
+        self.positional_encodings = None
+        self.extend_positional_encodings(torch.tensor(0.0).expand(1, 4000))
 
-        self.reverse = False
-        self.pe = None
-        self.extend_pe(torch.tensor(0.0).expand(1, 4000))
-
-    def extend_pe(self, x):
+    def extend_positional_encodings(self, x):
         """Reset the positional encodings."""
-        if self.pe is not None:
-            if self.pe.size(1) >= x.size(1):
-                if self.pe.dtype != x.dtype or self.pe.device != x.device:
-                    self.pe = self.pe.to(dtype=x.dtype, device=x.device)
+        if self.positional_encodings is not None:
+            if self.positional_encodings.size(1) >= x.size(1):
+                if self.positional_encodings.dtype != x.dtype or self.positional_encodings.device != x.device:
+                    self.positional_encodings = self.positional_encodings.to(dtype=x.dtype, device=x.device)
                 return
-        pe = torch.zeros(x.size(1), self.dim_model)
+        positional_encodings = torch.zeros(x.size(1), self.n_dim)
         if self.reverse:
             position = torch.arange(
                 x.size(1) - 1, -1, -1.0, dtype=torch.float32
@@ -80,32 +77,32 @@ class SinePositionalEmbedding(nn.Module):
                 0, x.size(1), dtype=torch.float32
             ).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, self.dim_model, 2, dtype=torch.float32)
-            * -(math.log(10000.0) / self.dim_model)
+            torch.arange(0, self.n_dim, 2, dtype=torch.float32)
+            * -(math.log(10000.0) / self.n_dim)
         )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.pe = pe.to(device=x.device, dtype=x.dtype).detach()
+        positional_encodings[:, 0::2] = torch.sin(position * div_term)
+        positional_encodings[:, 1::2] = torch.cos(position * div_term)
+        positional_encodings = positional_encodings.unsqueeze(0)
+        self.positional_encodings = positional_encodings.to(device=x.device, dtype=x.dtype).detach()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self.extend_pe(x)
+        self.extend_positional_encodings(x)
         output = x.unsqueeze(-1) if x.ndim == 2 else x
-        output = output * self.x_scale + self.alpha * self.pe[:, : x.size(1)]
+        output = output * self.x_scale + self.alpha * self.positional_encodings[:, : x.size(1)]
         return self.dropout(output)
 
 
 def multi_head_attention_forward(
-        x,
-        ipw,
-        ipb,
-        opw,
-        opb,
-        n_head,
-        attn_mask,
-        past_kv=None,
-        use_cache=False,
-):
+        x: Tensor,
+        ipw: Tensor,
+        ipb: Tensor,
+        opw: Tensor,
+        opb: Tensor,
+        n_head: int,
+        attn_mask: Tensor,
+        past_kv: Tensor = None,
+        use_cache: bool = False,
+) -> tuple[Tensor, Tensor]:
     # x = x.transpose(1, 0)
     # tgt_len, bsz, embed_dim = x.shape
     # head_dim = embed_dim // n_head
@@ -125,7 +122,7 @@ def multi_head_attention_forward(
 
     B, T, C = x.size()
 
-    q, k, v = torch._C._nn.linear(x, ipw, ipb).chunk(3, dim=-1)
+    q, k, v = F.linear(x, ipw, ipb).chunk(3, dim=-1)
     k = k.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
     q = q.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
     v = v.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
@@ -147,7 +144,7 @@ def multi_head_attention_forward(
     att = F.softmax(att, dim=-1)
     y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
     y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
-    y = torch._C._nn.linear(y, opw, opb)
+    y = F.linear(y, opw, opb)
     return (y, present)
 
 
@@ -213,22 +210,22 @@ class MultiheadAttention(nn.Module):
 
     def __init__(
             self,
-            embed_dim,
-            num_heads,
-            dropout=0.0,
-            bias=True,
-            add_bias_kv=False,
-            add_zero_attn=False,
-            kdim=None,
-            vdim=None,
-            batch_first=False,
-            linear1_cls=nn.Linear,
-            linear2_cls=nn.Linear,
+            embed_dim: int,
+            num_heads: int,
+            dropout: float = 0.0,
+            bias: bool = True,
+            add_bias_kv: bool = False,
+            add_zero_attn: bool = False,
+            kdim: int = None,
+            vdim: int = None,
+            batch_first: bool = False,
+            linear1_cls: nn.Module = nn.Linear,
+            linear2_cls: nn.Module = nn.Linear,
             device=None,
             dtype=None,
     ) -> None:
+        super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
-        super(MultiheadAttention, self).__init__()
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
@@ -690,7 +687,7 @@ class BasicNorm(_BasicNorm):
     ):
         super(BasicNorm, self).__init__(d_model, eps=eps)
 
-    def forward(self, input: Tensor, embedding: Any = None) -> Tensor:
+    def forward(self, input: Tensor, embedding: Any = None) -> tuple[Tensor, Tensor] | Tensor:
         if isinstance(input, tuple):
             input, embedding = input
             return (
@@ -798,7 +795,7 @@ class TransformerEncoderLayer(nn.Module):
             adaptive_layer_norm=False,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
-        super(TransformerEncoderLayer, self).__init__()
+        super().__init__()
         self.self_attn = MultiheadAttention(
             d_model,
             nhead,
@@ -858,7 +855,7 @@ class TransformerEncoderLayer(nn.Module):
             self.norm2 = norm2
 
     def __setstate__(self, state):
-        super(TransformerEncoderLayer, self).__setstate__(state)
+        super().__setstate__(state)
         if not hasattr(self, "activation"):
             self.activation = F.relu
 
@@ -867,7 +864,7 @@ class TransformerEncoderLayer(nn.Module):
             src: Tensor,
             src_mask: Optional[Tensor] = None,
             src_key_padding_mask: Optional[Tensor] = None,
-    ) -> Tensor:
+    ) -> tuple[Any, Any | None] | Any:
         r"""Pass the input through the encoder layer.
 
         Args:
@@ -1183,13 +1180,13 @@ class VALLF(nn.Module):
         self.ar_text_position = SinePositionalEmbedding(
             d_model,
             dropout=0.1,
-            scale=False,
+            # scale=False,
             alpha=True,
         )
         self.ar_audio_position = SinePositionalEmbedding(
             d_model,
             dropout=0.1,
-            scale=False,
+            # scale=False,
             alpha=True,
         )
 
@@ -1265,13 +1262,13 @@ class VALLF(nn.Module):
             self.nar_text_position = SinePositionalEmbedding(
                 nar_d_model,
                 dropout=0.0,
-                scale=False,
+                # scale=False,
                 alpha=False,
             )
             self.nar_audio_position = SinePositionalEmbedding(
                 nar_d_model,
                 dropout=0.1,
-                scale=False,
+                # scale=False,
                 alpha=False,
             )
 
