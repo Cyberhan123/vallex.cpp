@@ -353,3 +353,28 @@ ggml_vallex_cat(struct ggml_context *ctx, struct ggml_tensor *a, struct ggml_ten
     GGML_ASSERT(-GGML_MAX_DIMS <= dim);
     return ggml_map_custom2(ctx, a, b, ggml_vallex_masked_fill_impl, GGML_N_TASKS_MAX, &dim);
 };
+
+struct ggml_tensor *ggml_vallex_layer_norm(
+        struct ggml_context *ctx,
+        struct ggml_tensor *input,
+        struct ggml_tensor *normalized_shape,
+        struct ggml_tensor *weight,
+        struct ggml_tensor *bias,
+        float eps
+) {
+    auto x = ggml_norm(ctx, input, eps);
+
+    if (normalized_shape) {
+        x = ggml_reshape(ctx, x, normalized_shape);
+    }
+
+    if (weight) {
+        x = ggml_mul(ctx, x, weight);
+    }
+
+    if (bias) {
+        x = ggml_add(ctx, x, bias);
+    }
+
+    return x;
+}

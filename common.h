@@ -112,4 +112,13 @@ ggml_vallex_masked_fill(struct ggml_context *ctx, struct ggml_tensor *input, str
 // Concatenates the given sequence of seq tensors in the given dimension. All tensors must either have the same shape (except in the concatenating dimension) or be empty.
 struct ggml_tensor *
 ggml_vallex_cat(struct ggml_context *ctx, struct ggml_tensor *a, struct ggml_tensor *b, int dim);
+
+struct ggml_tensor *ggml_vallex_layer_norm(
+        struct ggml_context *ctx,
+        struct ggml_tensor *input,
+        struct ggml_tensor *normalized_shape,
+        struct ggml_tensor *weight,
+        struct ggml_tensor *bias,
+        float eps
+);
 #endif

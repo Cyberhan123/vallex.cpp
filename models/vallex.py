@@ -2,596 +2,20 @@
 refer from: https://github.com/Plachtaa/VALL-E-X
 """
 
-import math
 import copy
 import numbers
 import random
-import numpy as np
-from functools import partial
-from typing import Any, Callable, List, Optional, Tuple, Union, Iterator, Dict
+from typing import Any, Callable, List, Tuple, Union, Iterator, Dict
 
+import numpy as np
 import torch
-from macros import NUM_AUDIO_TOKENS, NUM_TEXT_TOKENS
 from torch import Tensor, nn
 from torch.nn import functional as F
-from torch.nn.init import xavier_normal_, xavier_uniform_, constant_
-from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
-from scaling import ActivationBalancer, BalancedDoubleSwish, Transpose
-from scaling import BasicNorm as _BasicNorm
 
-
-class TokenEmbedding(nn.Module):
-    def __init__(
-            self,
-            n_dim: int,
-            vocab_size: int,
-    ):
-        super().__init__()
-
-        self.vocab_size = vocab_size
-        self.n_dim = n_dim
-
-        self.word_embeddings = nn.Embedding(self.vocab_size, self.n_dim)
-
-    @property
-    def weight(self) -> torch.Tensor:
-        return self.word_embeddings.weight
-
-    def embedding(self, index: int) -> torch.Tensor:
-        return self.word_embeddings.weight[index: index + 1]
-
-    def forward(self, x: torch.Tensor):
-        X = self.word_embeddings(x)
-        return X
-
-
-class SinePositionalEmbedding(nn.Module):
-    def __init__(
-            self,
-            n_dim: int,
-            dropout: float = 0.0,
-            alpha: bool = True,
-    ):
-        super().__init__()
-        self.n_dim = n_dim
-        self.x_scale = 1.0
-        self.alpha = nn.Parameter(torch.ones(1), requires_grad=alpha)
-        self.dropout = torch.nn.Dropout(p=dropout)
-        self.positional_encodings = None
-        self.extend_positional_encodings(torch.tensor(0.0).expand(1, 4000))
-
-    def extend_positional_encodings(self, x):
-        """Reset the positional encodings."""
-        if self.positional_encodings is not None:
-            if self.positional_encodings.size(1) >= x.size(1):
-                if self.positional_encodings.dtype != x.dtype or self.positional_encodings.device != x.device:
-                    self.positional_encodings = self.positional_encodings.to(dtype=x.dtype, device=x.device)
-                return
-        positional_encodings = torch.zeros(x.size(1), self.n_dim)
-        if self.reverse:
-            position = torch.arange(
-                x.size(1) - 1, -1, -1.0, dtype=torch.float32
-            ).unsqueeze(1)
-        else:
-            position = torch.arange(
-                0, x.size(1), dtype=torch.float32
-            ).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, self.n_dim, 2, dtype=torch.float32)
-            * -(math.log(10000.0) / self.n_dim)
-        )
-        positional_encodings[:, 0::2] = torch.sin(position * div_term)
-        positional_encodings[:, 1::2] = torch.cos(position * div_term)
-        positional_encodings = positional_encodings.unsqueeze(0)
-        self.positional_encodings = positional_encodings.to(device=x.device, dtype=x.dtype).detach()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self.extend_positional_encodings(x)
-        output = x.unsqueeze(-1) if x.ndim == 2 else x
-        output = output * self.x_scale + self.alpha * self.positional_encodings[:, : x.size(1)]
-        return self.dropout(output)
-
-
-def multi_head_attention_forward(
-        x: Tensor,
-        ipw: Tensor,
-        ipb: Tensor,
-        opw: Tensor,
-        opb: Tensor,
-        n_head: int,
-        attn_mask: Tensor,
-        past_kv: Tensor = None,
-        use_cache: bool = False,
-) -> tuple[Tensor, Tensor]:
-    # x = x.transpose(1, 0)
-    # tgt_len, bsz, embed_dim = x.shape
-    # head_dim = embed_dim // n_head
-    # q, k, v = _in_projection_packed(x, x, x, ipw, ipb)
-    # q = q.contiguous().view(tgt_len, bsz * n_head, head_dim).transpose(0, 1)
-    # k = k.contiguous().view(k.shape[0], bsz * n_head, head_dim).transpose(0, 1)
-    # v = v.contiguous().view(v.shape[0], bsz * n_head, head_dim).transpose(0, 1)
-
-    # new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
-    # new_attn_mask.masked_fill_(attn_mask, float("-inf"))
-    # attn_mask = new_attn_mask
-    #
-    # attn_output, attn_output_weights = _scaled_dot_product_attention(q, k, v, attn_mask, 0.0)
-    # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len * bsz, embed_dim)
-    # attn_output = torch._C._nn.linear(attn_output, opw, opb)
-    # attn_output = attn_output.view(tgt_len, bsz, attn_output.size(1))
-
-    B, T, C = x.size()
-
-    q, k, v = F.linear(x, ipw, ipb).chunk(3, dim=-1)
-    k = k.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
-    q = q.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
-    v = v.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
-    if past_kv is not None:
-        past_key = past_kv[0]
-        past_value = past_kv[1]
-        k = torch.cat((past_key, k), dim=-2)
-        v = torch.cat((past_value, v), dim=-2)
-
-    FULL_T = k.shape[-2]
-
-    if use_cache is True:
-        present = (k, v)
-    else:
-        present = None
-
-    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-    att = att.masked_fill(attn_mask[FULL_T - T:FULL_T, :FULL_T], float('-inf'))
-    att = F.softmax(att, dim=-1)
-    y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-    y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
-    y = F.linear(y, opw, opb)
-    return (y, present)
-
-
-class MultiheadAttention(nn.Module):
-    r"""Allows the model to jointly attend to information
-    from different representation subspaces as described in the paper:
-    `Attention Is All You Need <https://arxiv.org/abs/1706.03762>`_.
-
-    Multi-Head Attention is defined as:
-
-    .. math::
-        \text{MultiHead}(Q, K, V) = \text{Concat}(head_1,\dots,head_h)W^O
-
-    where :math:`head_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)`.
-
-    ``forward()`` will use a special optimized implementation if all of the following
-    conditions are met:
-
-    - self attention is being computed (i.e., ``query``, ``key``, and ``value`` are the same tensor. This
-      restriction will be loosened in the future.)
-    - Either autograd is disabled (using ``torch.inference_mode`` or ``torch.no_grad``) or no tensor argument ``requires_grad``
-    - training is disabled (using ``.eval()``)
-    - dropout is 0
-    - ``add_bias_kv`` is ``False``
-    - ``add_zero_attn`` is ``False``
-    - ``batch_first`` is ``True`` and the input is batched
-    - ``kdim`` and ``vdim`` are equal to ``embed_dim``
-    - at most one of ``key_padding_mask`` or ``attn_mask`` is passed
-    - if a `NestedTensor <https://pytorch.org/docs/stable/nested.html>`_ is passed, neither ``key_padding_mask``
-      nor ``attn_mask`` is passed
-
-    If the optimized implementation is in use, a
-    `NestedTensor <https://pytorch.org/docs/stable/nested.html>`_ can be passed for
-    ``query``/``key``/``value`` to represent padding more efficiently than using a
-    padding mask. In this case, a `NestedTensor <https://pytorch.org/docs/stable/nested.html>`_
-    will be returned, and an additional speedup proportional to the fraction of the input
-    that is padding can be expected.
-
-    Args:
-        embed_dim: Total dimension of the model.
-        num_heads: Number of parallel attention heads. Note that ``embed_dim`` will be split
-            across ``num_heads`` (i.e. each head will have dimension ``embed_dim // num_heads``).
-        dropout: Dropout probability on ``attn_output_weights``. Default: ``0.0`` (no dropout).
-        bias: If specified, adds bias to input / output projection layers. Default: ``True``.
-        add_bias_kv: If specified, adds bias to the key and value sequences at dim=0. Default: ``False``.
-        add_zero_attn: If specified, adds a new batch of zeros to the key and value sequences at dim=1.
-            Default: ``False``.
-        kdim: Total number of features for keys. Default: ``None`` (uses ``kdim=embed_dim``).
-        vdim: Total number of features for values. Default: ``None`` (uses ``vdim=embed_dim``).
-        batch_first: If ``True``, then the input and output tensors are provided
-            as (batch, seq, feature). Default: ``False`` (seq, batch, feature).
-
-    Examples::
-
-        >>> # xdoctest: +SKIP
-        >>> multihead_attn = nn.MultiheadAttention(embed_dim, num_heads)
-        >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
-
-    """
-    __constants__ = ["batch_first"]
-    bias_k: Optional[torch.Tensor]
-    bias_v: Optional[torch.Tensor]
-
-    def __init__(
-            self,
-            embed_dim: int,
-            num_heads: int,
-            dropout: float = 0.0,
-            bias: bool = True,
-            add_bias_kv: bool = False,
-            add_zero_attn: bool = False,
-            kdim: int = None,
-            vdim: int = None,
-            batch_first: bool = False,
-            linear1_cls: nn.Module = nn.Linear,
-            linear2_cls: nn.Module = nn.Linear,
-            device=None,
-            dtype=None,
-    ) -> None:
-        super().__init__()
-        factory_kwargs = {"device": device, "dtype": dtype}
-        self.embed_dim = embed_dim
-        self.kdim = kdim if kdim is not None else embed_dim
-        self.vdim = vdim if vdim is not None else embed_dim
-        self._qkv_same_embed_dim = (
-                self.kdim == embed_dim and self.vdim == embed_dim
-        )
-
-        self.num_heads = num_heads
-        self.dropout = dropout
-        self.batch_first = batch_first
-        self.head_dim = embed_dim // num_heads
-        assert (
-                self.head_dim * num_heads == self.embed_dim
-        ), "embed_dim must be divisible by num_heads"
-
-        if add_bias_kv:
-            self.bias_k = nn.Parameter(
-                torch.empty((1, 1, embed_dim), **factory_kwargs)
-            )
-            self.bias_v = nn.Parameter(
-                torch.empty((1, 1, embed_dim), **factory_kwargs)
-            )
-        else:
-            self.bias_k = self.bias_v = None
-
-        if linear1_cls == nn.Linear:
-            if not self._qkv_same_embed_dim:
-                self.q_proj_weight = nn.Parameter(
-                    torch.empty((embed_dim, embed_dim), **factory_kwargs)
-                )
-                self.k_proj_weight = nn.Parameter(
-                    torch.empty((embed_dim, self.kdim), **factory_kwargs)
-                )
-                self.v_proj_weight = nn.Parameter(
-                    torch.empty((embed_dim, self.vdim), **factory_kwargs)
-                )
-                self.register_parameter("in_proj_weight", None)
-            else:
-                self.in_proj_weight = nn.Parameter(
-                    torch.empty((3 * embed_dim, embed_dim), **factory_kwargs)
-                )
-                self.register_parameter("q_proj_weight", None)
-                self.register_parameter("k_proj_weight", None)
-                self.register_parameter("v_proj_weight", None)
-
-            if bias:
-                self.in_proj_bias = nn.Parameter(
-                    torch.empty(3 * embed_dim, **factory_kwargs)
-                )
-            else:
-                self.register_parameter("in_proj_bias", None)
-            self.out_proj = NonDynamicallyQuantizableLinear(
-                embed_dim, embed_dim, bias=bias, **factory_kwargs
-            )
-
-            self._reset_parameters()
-        else:
-            if not self._qkv_same_embed_dim:
-                raise NotImplementedError
-            else:
-                self.in_proj_linear = linear1_cls(
-                    embed_dim, 3 * embed_dim, bias=bias, **factory_kwargs
-                )
-                self.in_proj_weight = self.in_proj_linear.weight
-
-                self.register_parameter("q_proj_weight", None)
-                self.register_parameter("k_proj_weight", None)
-                self.register_parameter("v_proj_weight", None)
-
-                if bias:
-                    self.in_proj_bias = self.in_proj_linear.bias
-                else:
-                    self.register_parameter("in_proj_bias", None)
-
-            self.out_proj = linear2_cls(
-                embed_dim, embed_dim, bias=bias, **factory_kwargs
-            )
-
-            if self.bias_k is not None:
-                xavier_normal_(self.bias_k)
-            if self.bias_v is not None:
-                xavier_normal_(self.bias_v)
-
-        self.add_zero_attn = add_zero_attn
-
-    def _reset_parameters(self):
-        if self._qkv_same_embed_dim:
-            xavier_uniform_(self.in_proj_weight)
-        else:
-            xavier_uniform_(self.q_proj_weight)
-            xavier_uniform_(self.k_proj_weight)
-            xavier_uniform_(self.v_proj_weight)
-
-        if self.in_proj_bias is not None:
-            constant_(self.in_proj_bias, 0.0)
-            constant_(self.out_proj.bias, 0.0)
-
-        if self.bias_k is not None:
-            xavier_normal_(self.bias_k)
-        if self.bias_v is not None:
-            xavier_normal_(self.bias_v)
-
-    def __setstate__(self, state):
-        # Support loading old MultiheadAttention checkpoints generated by v1.1.0
-        if "_qkv_same_embed_dim" not in state:
-            state["_qkv_same_embed_dim"] = True
-
-        super(MultiheadAttention, self).__setstate__(state)
-
-    def forward(
-            self,
-            query: Tensor,
-            key: Tensor,
-            value: Tensor,
-            key_padding_mask: Optional[Tensor] = None,
-            need_weights: bool = True,
-            attn_mask: Optional[Tensor] = None,
-            average_attn_weights: bool = True,
-    ) -> Tuple[Tensor, Optional[Tensor]]:
-        r"""
-        Args:
-            query: Query embeddings of shape :math:`(L, E_q)` for unbatched input, :math:`(L, N, E_q)` when ``batch_first=False``
-                or :math:`(N, L, E_q)` when ``batch_first=True``, where :math:`L` is the target sequence length,
-                :math:`N` is the batch size, and :math:`E_q` is the query embedding dimension ``embed_dim``.
-                Queries are compared against key-value pairs to produce the output.
-                See "Attention Is All You Need" for more details.
-            key: Key embeddings of shape :math:`(S, E_k)` for unbatched input, :math:`(S, N, E_k)` when ``batch_first=False``
-                or :math:`(N, S, E_k)` when ``batch_first=True``, where :math:`S` is the source sequence length,
-                :math:`N` is the batch size, and :math:`E_k` is the key embedding dimension ``kdim``.
-                See "Attention Is All You Need" for more details.
-            value: Value embeddings of shape :math:`(S, E_v)` for unbatched input, :math:`(S, N, E_v)` when
-                ``batch_first=False`` or :math:`(N, S, E_v)` when ``batch_first=True``, where :math:`S` is the source
-                sequence length, :math:`N` is the batch size, and :math:`E_v` is the value embedding dimension ``vdim``.
-                See "Attention Is All You Need" for more details.
-            key_padding_mask: If specified, a mask of shape :math:`(N, S)` indicating which elements within ``key``
-                to ignore for the purpose of attention (i.e. treat as "padding"). For unbatched `query`, shape should be :math:`(S)`.
-                Binary and byte masks are supported.
-                For a binary mask, a ``True`` value indicates that the corresponding ``key`` value will be ignored for
-                the purpose of attention. For a float mask, it will be directly added to the corresponding ``key`` value.
-            need_weights: If specified, returns ``attn_output_weights`` in addition to ``attn_outputs``.
-                Default: ``True``.
-            attn_mask: If specified, a 2D or 3D mask preventing attention to certain positions. Must be of shape
-                :math:`(L, S)` or :math:`(N\cdot\text{num\_heads}, L, S)`, where :math:`N` is the batch size,
-                :math:`L` is the target sequence length, and :math:`S` is the source sequence length. A 2D mask will be
-                broadcasted across the batch while a 3D mask allows for a different mask for each entry in the batch.
-                Binary, byte, and float masks are supported. For a binary mask, a ``True`` value indicates that the
-                corresponding position is not allowed to attend. For a byte mask, a non-zero value indicates that the
-                corresponding position is not allowed to attend. For a float mask, the mask values will be added to
-                the attention weight.
-            average_attn_weights: If true, indicates that the returned ``attn_weights`` should be averaged across
-                heads. Otherwise, ``attn_weights`` are provided separately per head. Note that this flag only has an
-                effect when ``need_weights=True``. Default: ``True`` (i.e. average weights across heads)
-
-        Outputs:
-            - **attn_output** - Attention outputs of shape :math:`(L, E)` when input is unbatched,
-              :math:`(L, N, E)` when ``batch_first=False`` or :math:`(N, L, E)` when ``batch_first=True``,
-              where :math:`L` is the target sequence length, :math:`N` is the batch size, and :math:`E` is the
-              embedding dimension ``embed_dim``.
-            - **attn_output_weights** - Only returned when ``need_weights=True``. If ``average_attn_weights=True``,
-              returns attention weights averaged across heads of shape :math:`(L, S)` when input is unbatched or
-              :math:`(N, L, S)`, where :math:`N` is the batch size, :math:`L` is the target sequence length, and
-              :math:`S` is the source sequence length. If ``average_attn_weights=False``, returns attention weights per
-              head of shape :math:`(\text{num\_heads}, L, S)` when input is unbatched or :math:`(N, \text{num\_heads}, L, S)`.
-
-            .. note::
-                `batch_first` argument is ignored for unbatched inputs.
-        """
-        is_batched = query.dim() == 3
-        if key_padding_mask is not None:
-            _kpm_dtype = key_padding_mask.dtype
-            if _kpm_dtype != torch.bool and not torch.is_floating_point(
-                    key_padding_mask
-            ):
-                raise AssertionError(
-                    "only bool and floating types of key_padding_mask are supported"
-                )
-        why_not_fast_path = ""
-        if not is_batched:
-            why_not_fast_path = f"input not batched; expected query.dim() of 3 but got {query.dim()}"
-        elif query is not key or key is not value:
-            # When lifting this restriction, don't forget to either
-            # enforce that the dtypes all match or test cases where
-            # they don't!
-            why_not_fast_path = "non-self attention was used (query, key, and value are not the same Tensor)"
-        elif (
-                self.in_proj_bias is not None
-                and query.dtype != self.in_proj_bias.dtype
-        ):
-            why_not_fast_path = f"dtypes of query ({query.dtype}) and self.in_proj_bias ({self.in_proj_bias.dtype}) don't match"
-        elif (
-                self.in_proj_weight is not None
-                and query.dtype != self.in_proj_weight.dtype
-        ):
-            # this case will fail anyway, but at least they'll get a useful error message.
-            why_not_fast_path = f"dtypes of query ({query.dtype}) and self.in_proj_weight ({self.in_proj_weight.dtype}) don't match"
-        elif self.training:
-            why_not_fast_path = "training is enabled"
-        elif not self.batch_first:
-            why_not_fast_path = "batch_first was not True"
-        elif self.bias_k is not None:
-            why_not_fast_path = "self.bias_k was not None"
-        elif self.bias_v is not None:
-            why_not_fast_path = "self.bias_v was not None"
-        elif self.dropout:
-            why_not_fast_path = f"dropout was {self.dropout}, required zero"
-        elif self.add_zero_attn:
-            why_not_fast_path = "add_zero_attn was enabled"
-        elif not self._qkv_same_embed_dim:
-            why_not_fast_path = "_qkv_same_embed_dim was not True"
-        elif attn_mask is not None:
-            why_not_fast_path = "attn_mask was not None"
-        elif query.is_nested and key_padding_mask is not None:
-            why_not_fast_path = (
-                "key_padding_mask is not supported with NestedTensor input"
-            )
-        elif self.num_heads % 2 == 1:
-            why_not_fast_path = "num_heads is odd"
-        elif torch.is_autocast_enabled():
-            why_not_fast_path = "autocast is enabled"
-
-        if not why_not_fast_path:
-            tensor_args = (
-                query,
-                key,
-                value,
-                self.in_proj_weight,
-                self.in_proj_bias,
-                self.out_proj.weight,
-                self.out_proj.bias,
-            )
-            # We have to use list comprehensions below because TorchScript does not support
-            # generator expressions.
-            if torch.overrides.has_torch_function(tensor_args):
-                why_not_fast_path = "some Tensor argument has_torch_function"
-            elif not all(
-                    [
-                        (x is None or x.is_cuda or "cpu" in str(x.device))
-                        for x in tensor_args
-                    ]
-            ):
-                why_not_fast_path = (
-                    "some Tensor argument is neither CUDA nor CPU"
-                )
-            elif torch.is_grad_enabled() and any(
-                    [x is not None and x.requires_grad for x in tensor_args]
-            ):
-                why_not_fast_path = (
-                    "grad is enabled and at least one of query or the "
-                    "input/output projection weights or biases requires_grad"
-                )
-            if not why_not_fast_path:
-                return torch._native_multi_head_attention(
-                    query,
-                    key,
-                    value,
-                    self.embed_dim,
-                    self.num_heads,
-                    self.in_proj_weight,
-                    self.in_proj_bias,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    key_padding_mask
-                    if key_padding_mask is not None
-                    else attn_mask,
-                    need_weights,
-                    average_attn_weights,
-                    1
-                    if key_padding_mask is not None
-                    else 0
-                    if attn_mask is not None
-                    else None,
-                )
-
-        any_nested = query.is_nested or key.is_nested or value.is_nested
-        assert not any_nested, (
-                "MultiheadAttention does not support NestedTensor outside of its fast path. "
-                + f"The fast path was not hit because {why_not_fast_path}"
-        )
-
-        if self.batch_first and is_batched:
-            # make sure that the transpose op does not affect the "is" property
-            if key is value:
-                if query is key:
-                    query = key = value = query.transpose(1, 0)
-                else:
-                    query, key = [x.transpose(1, 0) for x in (query, key)]
-                    value = key
-            else:
-                query, key, value = [
-                    x.transpose(1, 0) for x in (query, key, value)
-                ]
-
-        if not self._qkv_same_embed_dim:
-            attn_output, attn_output_weights = F.multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                self.in_proj_weight,
-                self.in_proj_bias,
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                training=self.training,
-                key_padding_mask=key_padding_mask,
-                need_weights=need_weights,
-                attn_mask=attn_mask,
-                use_separate_proj_weight=True,
-                q_proj_weight=self.q_proj_weight,
-                k_proj_weight=self.k_proj_weight,
-                v_proj_weight=self.v_proj_weight,
-                average_attn_weights=average_attn_weights,
-            )
-        else:
-            attn_output, attn_output_weights = F.multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                self.in_proj_weight,
-                self.in_proj_bias,
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                training=self.training,
-                key_padding_mask=key_padding_mask,
-                need_weights=need_weights,
-                attn_mask=attn_mask,
-                average_attn_weights=average_attn_weights,
-            )
-        if self.batch_first and is_batched:
-            return attn_output.transpose(1, 0), attn_output_weights
-        else:
-            return attn_output, attn_output_weights
-
-    def infer(self,
-              x: Tensor,
-              key_padding_mask: Optional[Tensor] = None,
-              need_weights: bool = True,
-              attn_mask: Optional[Tensor] = None,
-              average_attn_weights: bool = True,
-              past_kv=None,
-              use_cache=False
-              ):
-        # x = x.transpose(1, 0)
-        y, kv = multi_head_attention_forward(
-            x=x,
-            ipw=self.in_proj_weight,
-            ipb=self.in_proj_bias,
-            opw=self.out_proj.weight,
-            opb=self.out_proj.bias,
-            n_head=self.num_heads,
-            attn_mask=attn_mask,
-            past_kv=past_kv,
-            use_cache=use_cache,
-        )
-        return (y, kv)
-
+from macros import NUM_AUDIO_TOKENS, NUM_TEXT_TOKENS
+from models.embedding import TokenEmbedding, SinePositionalEmbedding
+from models.transformer import TransformerEncoderLayer, TransformerEncoder
+from scaling import Transpose
 
 _shape_t = Union[int, List[int], torch.Size]
 
@@ -677,73 +101,73 @@ class LayerNorm(nn.Module):
         )
 
 
-class BasicNorm(_BasicNorm):
-    def __init__(
-            self,
-            d_model: int,
-            eps: float = 1e-5,
-            device=None,
-            dtype=None,
-    ):
-        super(BasicNorm, self).__init__(d_model, eps=eps)
-
-    def forward(self, input: Tensor, embedding: Any = None) -> tuple[Tensor, Tensor] | Tensor:
-        if isinstance(input, tuple):
-            input, embedding = input
-            return (
-                super(BasicNorm, self).forward(input),
-                embedding,
-            )
-
-        assert embedding is None
-        return super(BasicNorm, self).forward(input)
-
-
-class BalancedBasicNorm(nn.Module):
-    def __init__(
-            self,
-            d_model: int,
-            eps: float = 1e-5,
-            device=None,
-            dtype=None,
-    ):
-        super(BalancedBasicNorm, self).__init__()
-        self.balancer = ActivationBalancer(
-            d_model,
-            channel_dim=-1,
-            min_positive=0.45,
-            max_positive=0.55,
-            max_abs=6.0,
-        )
-        self.norm = BasicNorm(d_model, eps, device=device, dtype=dtype)
-
-    def forward(self, input: Tensor, embedding: Any = None) -> Tensor:
-        if isinstance(input, tuple):
-            input, embedding = input
-            return self.norm((self.balancer(input), embedding))
-
-        assert embedding is None
-        return self.norm(self.balancer(input))
-
-
-class IdentityNorm(nn.Module):
-    def __init__(
-            self,
-            d_model: int,
-            eps: float = 1e-5,
-            device=None,
-            dtype=None,
-    ) -> None:
-        super(IdentityNorm, self).__init__()
-
-    def forward(self, input: Tensor, embedding: Any = None) -> Tensor:
-        if isinstance(input, tuple):
-            return input
-
-        assert embedding is None
-        return input
-
-
+# class BasicNorm(_BasicNorm):
+#     def __init__(
+#             self,
+#             d_model: int,
+#             eps: float = 1e-5,
+#             device=None,
+#             dtype=None,
+#     ):
+#         super(BasicNorm, self).__init__(d_model, eps=eps)
+#
+#     def forward(self, input: Tensor, embedding: Any = None) -> tuple[Tensor, Tensor] | Tensor:
+#         if isinstance(input, tuple):
+#             input, embedding = input
+#             return (
+#                 super(BasicNorm, self).forward(input),
+#                 embedding,
+#             )
+#
+#         assert embedding is None
+#         return super(BasicNorm, self).forward(input)
+#
+#
+# class BalancedBasicNorm(nn.Module):
+#     def __init__(
+#             self,
+#             d_model: int,
+#             eps: float = 1e-5,
+#             device=None,
+#             dtype=None,
+#     ):
+#         super(BalancedBasicNorm, self).__init__()
+#         self.balancer = ActivationBalancer(
+#             d_model,
+#             channel_dim=-1,
+#             min_positive=0.45,
+#             max_positive=0.55,
+#             max_abs=6.0,
+#         )
+#         self.norm = BasicNorm(d_model, eps, device=device, dtype=dtype)
+#
+#     def forward(self, input: Tensor, embedding: Any = None) -> Tensor:
+#         if isinstance(input, tuple):
+#             input, embedding = input
+#             return self.norm((self.balancer(input), embedding))
+#
+#         assert embedding is None
+#         return self.norm(self.balancer(input))
+#
+#
+# class IdentityNorm(nn.Module):
+#     def __init__(
+#             self,
+#             d_model: int,
+#             eps: float = 1e-5,
+#             device=None,
+#             dtype=None,
+#     ) -> None:
+#         super(IdentityNorm, self).__init__()
+#
+#     def forward(self, input: Tensor, embedding: Any = None) -> Tensor:
+#         if isinstance(input, tuple):
+#             return input
+#
+#         assert embedding is None
+#         return input
+#
+#
 class AdaptiveLayerNorm(nn.Module):
     r"""Adaptive Layer Normalization"""
 
@@ -754,7 +178,7 @@ class AdaptiveLayerNorm(nn.Module):
         self.d_model = d_model
         self.eps = self.norm.eps
 
-    def forward(self, input: Tensor, embedding: Tensor = None) -> Tensor:
+    def forward(self, input: Tensor, embedding: Tensor = None) -> tuple[Any, Any] | Any:
         if isinstance(input, tuple):
             input, embedding = input
             weight, bias = torch.split(
@@ -762,7 +186,7 @@ class AdaptiveLayerNorm(nn.Module):
                 split_size_or_sections=self.d_model,
                 dim=-1,
             )
-            return (weight * self.norm(input) + bias, embedding)
+            return weight * self.norm(input) + bias, embedding
 
         weight, bias = torch.split(
             self.project_layer(embedding),
@@ -772,309 +196,7 @@ class AdaptiveLayerNorm(nn.Module):
         return weight * self.norm(input) + bias
 
 
-class TransformerEncoderLayer(nn.Module):
-    __constants__ = ["batch_first", "norm_first"]
 
-    def __init__(
-            self,
-            d_model: int,
-            nhead: int,
-            dim_feedforward: int = 2048,
-            dropout: float = 0.1,
-            activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
-            batch_first: bool = False,
-            norm_first: bool = False,
-            device=None,
-            dtype=None,
-            linear1_self_attention_cls: nn.Module = nn.Linear,
-            linear2_self_attention_cls: nn.Module = nn.Linear,
-            linear1_feedforward_cls: nn.Module = nn.Linear,
-            linear2_feedforward_cls: nn.Module = nn.Linear,
-            layer_norm_cls: nn.Module = LayerNorm,
-            layer_norm_eps: float = 1e-5,
-            adaptive_layer_norm=False,
-    ) -> None:
-        factory_kwargs = {"device": device, "dtype": dtype}
-        super().__init__()
-        self.self_attn = MultiheadAttention(
-            d_model,
-            nhead,
-            dropout=dropout,
-            batch_first=batch_first,
-            linear1_cls=linear1_self_attention_cls,
-            linear2_cls=linear2_self_attention_cls,
-            **factory_kwargs,
-        )
-
-        # Implementation of Feedforward model
-        self.linear1 = linear1_feedforward_cls(
-            d_model, dim_feedforward, **factory_kwargs
-        )
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = linear2_feedforward_cls(
-            dim_feedforward, d_model, **factory_kwargs
-        )
-
-        self.norm_first = norm_first
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
-
-        # Legacy string support for activation function.
-        if isinstance(activation, str):
-            activation = _get_activation_fn(activation)
-        elif isinstance(activation, partial):
-            activation = activation(d_model)
-        elif activation == BalancedDoubleSwish:
-            activation = BalancedDoubleSwish(d_model)
-
-        # # We can't test self.activation in forward() in TorchScript,
-        # # so stash some information about it instead.
-        # if activation is F.relu or isinstance(activation, torch.nn.ReLU):
-        #     self.activation_relu_or_gelu = 1
-        # elif activation is F.gelu or isinstance(activation, torch.nn.GELU):
-        #     self.activation_relu_or_gelu = 2
-        # else:
-        #     self.activation_relu_or_gelu = 0
-        self.activation = activation
-
-        norm1 = layer_norm_cls(d_model, eps=layer_norm_eps, **factory_kwargs)
-        if layer_norm_cls == IdentityNorm:
-            norm2 = BalancedBasicNorm(
-                d_model, eps=layer_norm_eps, **factory_kwargs
-            )
-        else:
-            norm2 = layer_norm_cls(
-                d_model, eps=layer_norm_eps, **factory_kwargs
-            )
-
-        if adaptive_layer_norm:
-            self.norm1 = AdaptiveLayerNorm(d_model, norm1)
-            self.norm2 = AdaptiveLayerNorm(d_model, norm2)
-        else:
-            self.norm1 = norm1
-            self.norm2 = norm2
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        if not hasattr(self, "activation"):
-            self.activation = F.relu
-
-    def forward(
-            self,
-            src: Tensor,
-            src_mask: Optional[Tensor] = None,
-            src_key_padding_mask: Optional[Tensor] = None,
-    ) -> tuple[Any, Any | None] | Any:
-        r"""Pass the input through the encoder layer.
-
-        Args:
-            src: the sequence to the encoder layer (required).
-            src_mask: the mask for the src sequence (optional).
-            src_key_padding_mask: the mask for the src keys per batch (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        x, stage_embedding = src, None
-        is_src_tuple = False
-        if isinstance(src, tuple):
-            x, stage_embedding = src
-            is_src_tuple = True
-
-        if src_key_padding_mask is not None:
-            _skpm_dtype = src_key_padding_mask.dtype
-            if _skpm_dtype != torch.bool and not torch.is_floating_point(
-                    src_key_padding_mask
-            ):
-                raise AssertionError(
-                    "only bool and floating types of key_padding_mask are supported"
-                )
-
-        if self.norm_first:
-            x = x + self._sa_block(
-                self.norm1(x, stage_embedding),
-                src_mask,
-                src_key_padding_mask,
-            )
-            x = x + self._ff_block(self.norm2(x, stage_embedding))
-        else:
-            x = self.norm1(
-                x + self._sa_block(x, src_mask, src_key_padding_mask),
-                stage_embedding,
-            )
-            x = self.norm2(x + self._ff_block(x), stage_embedding)
-
-        if is_src_tuple:
-            return (x, stage_embedding)
-        return x
-
-    def infer(
-            self,
-            src: Tensor,
-            src_mask: Optional[Tensor] = None,
-            src_key_padding_mask: Optional[Tensor] = None,
-            past_kv: Optional[Tensor] = None,
-            use_cache: bool = False,
-    ):
-        x, stage_embedding = src, None
-        is_src_tuple = False
-        if isinstance(src, tuple):
-            x, stage_embedding = src
-            is_src_tuple = True
-
-        if src_key_padding_mask is not None:
-            _skpm_dtype = src_key_padding_mask.dtype
-            if _skpm_dtype != torch.bool and not torch.is_floating_point(
-                    src_key_padding_mask
-            ):
-                raise AssertionError(
-                    "only bool and floating types of key_padding_mask are supported"
-                )
-
-        if self.norm_first:
-            x_attn_out, kv = self.self_attn.infer(
-                self.norm1(x, stage_embedding),
-                attn_mask=src_mask,
-                key_padding_mask=src_key_padding_mask,
-                need_weights=False,
-                past_kv=past_kv,
-                use_cache=use_cache,
-            )
-            x = x + x_attn_out
-            x = x + self._ff_block(self.norm2(x, stage_embedding))
-
-        if is_src_tuple:
-            return (x, stage_embedding)
-        return (x, kv)
-
-    # self-attention block
-    def _sa_block(
-            self,
-            x: Tensor,
-            attn_mask: Optional[Tensor],
-            key_padding_mask: Optional[Tensor],
-    ) -> Tensor:
-        x = self.self_attn(
-            x,
-            x,
-            x,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
-            need_weights=False,
-        )[0]
-        return self.dropout1(x)
-
-    # feed forward block
-    def _ff_block(self, x: Tensor) -> Tensor:
-        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
-        return self.dropout2(x)
-
-
-class TransformerEncoder(nn.Module):
-    r"""TransformerEncoder is a stack of N encoder layers. Users can build the
-    BERT(https://arxiv.org/abs/1810.04805) model with corresponding parameters.
-
-    Args:
-        encoder_layer: an instance of the TransformerEncoderLayer() class (required).
-        num_layers: the number of sub-encoder-layers in the encoder (required).
-        norm: the layer normalization component (optional).
-        enable_nested_tensor: if True, input will automatically convert to nested tensor
-            (and convert back on output). This will improve the overall performance of
-            TransformerEncoder when padding rate is high. Default: ``True`` (enabled).
-
-    Examples::
-        >>> encoder_layer = TransformerEncoderLayer(d_model=512, nhead=8)
-        >>> transformer_encoder = TransformerEncoder(encoder_layer, num_layers=6)
-        >>> src = torch.rand(10, 32, 512)
-        >>> out = transformer_encoder(src)
-    """
-    __constants__ = ["norm"]
-
-    def __init__(self, encoder_layer, num_layers, norm=None):
-        super(TransformerEncoder, self).__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
-        self.num_layers = num_layers
-        self.norm = norm
-
-    def forward(
-            self,
-            src: Tensor,
-            mask: Optional[Tensor] = None,
-            src_key_padding_mask: Optional[Tensor] = None,
-            return_layer_states: bool = False,
-    ) -> Tensor:
-        r"""Pass the input through the encoder layers in turn.
-
-        Args:
-            src: the sequence to the encoder (required).
-            mask: the mask for the src sequence (optional).
-            src_key_padding_mask: the mask for the src keys per batch (optional).
-            return_layer_states: return layers' state (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        if return_layer_states:
-            layer_states = []  # layers' output
-            output = src
-            for mod in self.layers:
-                output = mod(
-                    output,
-                    src_mask=mask,
-                    src_key_padding_mask=src_key_padding_mask,
-                )
-                layer_states.append(output[0])
-
-            if self.norm is not None:
-                output = self.norm(output)
-
-            return layer_states, output
-
-        output = src
-        for mod in self.layers:
-            output = mod(
-                output, src_mask=mask, src_key_padding_mask=src_key_padding_mask
-            )
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        return output
-
-    def infer(
-            self,
-            src: Tensor,
-            mask: Optional[Tensor] = None,
-            src_key_padding_mask: Optional[Tensor] = None,
-            return_layer_states: bool = False,
-            past_kv: Optional[Tensor] = None,
-            use_cache: bool = False,
-    ):
-        if past_kv is None:
-            past_length = 0
-            past_kv = tuple([None] * self.num_layers)
-        else:
-            past_length = past_kv[0][0].size(-2)
-        new_kv = () if use_cache else None
-        output = src
-        for mod, past_layer_kv in zip(self.layers, past_kv):
-            output, kv = mod.infer(
-                output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, past_kv=past_layer_kv,
-                use_cache=use_cache
-            )
-            if use_cache:
-                new_kv = new_kv + (kv,)
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        return output, new_kv
-
-
-# NOTE: There are two ways to implement the model
-#       1) [VALL-F] standard TransformerDecoder, use x as memory
-#       2) [VALL-E] modified TransformerDecoder like GPT-x(e.g. causal TransformerEncoder),
-#          use x as the prefix of decoder inputs
 
 class PromptedFeatures:
     def __init__(self, prompts, features):
@@ -1200,7 +322,7 @@ class VALLF(nn.Module):
                 norm_first=norm_first,
             ),
             num_layers=num_layers,
-            norm=LayerNorm(d_model) if norm_first else None,
+            norm=nn.LayerNorm(d_model) if norm_first else None,
         )
         self.ar_predict_layer = nn.Linear(
             d_model, NUM_AUDIO_TOKENS + 1, bias=False
@@ -1902,3 +1024,4 @@ def topk_sampling(logits, top_k=10, top_p=1.0, temperature=1.0):
     logprobs = F.log_softmax(logits.float(), dim=-1)
     current_logprobs = logprobs[torch.arange(logprobs.shape[0]), token.squeeze(1)]
     return token, current_logprobs
+
