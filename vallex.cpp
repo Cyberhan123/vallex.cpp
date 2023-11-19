@@ -382,8 +382,8 @@ VALLF::VALLF(
         int num_layers,
         bool norm_first,
         bool add_prenet,
-        TransformerDecoder *decoder_cls,
-        TransformerDecoderLayer *decoder_layer_cls,
+        TransformerEncoder *decoder_cls,
+        TransformerEncoderLayer *decoder_layer_cls,
         int prefix_mode,
         bool share_embedding,
         float nar_scale_factor,
@@ -417,8 +417,8 @@ VALLF::VALLF(
 //            false,
 //            true
     );
-    this-> ar_decoder = new TransformerDecoder();
-    this->ar_predict_layer = new TransformerDecoderLayer();
+    this-> ar_decoder = new TransformerEncoder();
+    this->ar_predict_layer = new TransformerEncoderLayer();
     //        rng = random.Random(0)
     this->num_heads = nhead;
     this->prefix_mode = prefix_mode;
@@ -471,8 +471,8 @@ VALLE::VALLE(
         num_layers,
         norm_first,
         add_prenet,
-        new TransformerDecoder(),
-        new TransformerDecoderLayer(),
+        new TransformerEncoder(),
+        new TransformerEncoderLayer(),
         prefix_mode, share_embedding, nar_scale_factor, prepend_bos, num_token,
         quantizers) {
     this->ar_language_embedding = new TokenEmbedding(d_model, language_ID.size());

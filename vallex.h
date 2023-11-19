@@ -17,8 +17,8 @@ public:
             int num_layers,
             bool norm_first = true,
             bool add_prenet = false,
-            TransformerDecoder *decoder_cls = nullptr,
-            TransformerDecoderLayer *decoder_layer_cls = nullptr,
+            TransformerEncoder *decoder_cls = nullptr,
+            TransformerEncoderLayer *decoder_layer_cls = nullptr,
             int prefix_mode = 0,
             bool share_embedding = true,
             float nar_scale_factor = 1.0,
@@ -42,8 +42,8 @@ private:
     SinePositionalEmbedding *ar_text_position;
     SinePositionalEmbedding *ar_audio_position;
 
-    TransformerDecoder *ar_decoder;
-    TransformerDecoderLayer *ar_predict_layer;
+    TransformerEncoder *ar_decoder;
+    TransformerEncoderLayer *ar_predict_layer;
     int num_heads;
     int prefix_mode{};
     void *nar_audio_embeddings;

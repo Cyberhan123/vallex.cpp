@@ -197,6 +197,8 @@ public:
     ggml_tensor *linear2_weight;
     ggml_tensor *linear1_bias;
     ggml_tensor *linear2_bias;
+
+    float layer_norm_eps;
 private:
     struct ggml_tensor *self_attention_block(
             vallex_compute_context *ctx,
@@ -225,8 +227,7 @@ class TransformerEncoder :
                 /*return_layer_states: bool = False,*/              bool
         > {
 public:
-    TransformerEncoder(const TransformerEncoderLayer &encoder_layer, int64_t num_layers,
-                       const NN::Module<ggml_tensor *, ggml_tensor *> &norm);
+    TransformerEncoder(const TransformerEncoderLayer &encoder_layer, int64_t num_layers);
 
     size_t compute_params_mem_size(ggml_type wtype) override;
 
@@ -255,7 +256,6 @@ public:
 
     std::vector<TransformerEncoderLayer> layers;
     int64_t num_layers;
-    Norm norm1;
 };
 
 #endif

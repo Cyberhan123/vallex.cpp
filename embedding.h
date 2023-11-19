@@ -2,7 +2,6 @@
 #ifndef EMBEDDING_H
 #define EMBEDDING_H
 
-#include <cmath>
 #include "common.h"
 #include <ggml/ggml.h>
 
