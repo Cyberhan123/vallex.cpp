@@ -112,7 +112,7 @@ struct ggml_tensor* TransformerEncoderLayer::forward(
     {
         x = ggml_norm(ctx->context,
                       ggml_add(ctx->context, x,
-                               this->self_attention_block(ctx, x, src_mask, src_key_padding_mask))
+                               this->self_attention_block(ctx, x, src_mask, src_key_padding_mask)),
                       this->layer_norm_eps
         );
         x = ggml_norm(ctx->context,
@@ -130,16 +130,16 @@ struct ggml_tensor*
 TransformerEncoderLayer::self_attention_block(vallex_compute_context* ctx, ggml_tensor* x, ggml_tensor* attn_mask,
                                               ggml_tensor* key_padding_mask)
 {
-    // this->self_attn->forward(ctx,x,x,x,attn_mask,key_padding_mask,false,false);
+    this->self_attn->forward(ctx,x,x,x,attn_mask,key_padding_mask,false);
     return nullptr;
 }
 
-struct ggml_tensor*
-TransformerEncoderLayer::multihead_attention_block(vallex_compute_context* ctx, ggml_tensor* x, ggml_tensor* mem,
-                                                   ggml_tensor* attn_mask, ggml_tensor* key_padding_mask)
-{
-    return nullptr;
-}
+//struct ggml_tensor*
+//TransformerEncoderLayer::multihead_attention_block(vallex_compute_context* ctx, ggml_tensor* x, ggml_tensor* mem,
+//                                                   ggml_tensor* attn_mask, ggml_tensor* key_padding_mask)
+//{
+//    return nullptr;
+//}
 
 struct ggml_tensor* TransformerEncoderLayer::feed_forward_block(vallex_compute_context* ctx, ggml_tensor* x)
 {

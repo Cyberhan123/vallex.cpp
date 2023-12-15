@@ -5,6 +5,7 @@
 #include "common.h"
 
 class MultiheadAttention : public NN::Module<
+        ggml_tensor *,
         /* x: Tensor,*/                                 ggml_tensor *,
         /*key_padding_mask: Optional[Tensor] = None,*/  ggml_tensor *,
         /*need_weights: bool = True,*/                  bool,
@@ -53,6 +54,20 @@ public:
             ggml_tensor *k_cache,
             ggml_tensor *v_cache
     ) override;
+
+    struct ggml_tensor *
+    infer(
+            vallex_compute_context *ctx,
+            /* x: Tensor,*/                                 ggml_tensor *x,
+            /*key_padding_mask: Optional[Tensor] = None,*/  ggml_tensor *key_padding_mask,
+            /*need_weights: bool = True,*/                  bool need_weights,
+            /*attn_mask: Optional[Tensor] = None,*/         ggml_tensor *attn_mask,
+            /*average_attn_weights: bool = True,*/          bool average_attn_weights,
+            /*past_kv = None,*/                             ggml_tensor *past_kv,
+            /*use_cache = False*/                           bool use_cache,
+            ggml_tensor *k_cache,
+            ggml_tensor *v_cache
+    );
 
     struct ggml_tensor *in_proj_weight;
     struct ggml_tensor *in_proj_bias;

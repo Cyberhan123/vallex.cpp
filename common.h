@@ -72,7 +72,7 @@ struct vallex_compute_context {
 };
 
 namespace NN {
-    template<typename... Ts>
+    template<typename TReturn,typename... TArgs>
     class Module {
         // compute module buff size
         virtual size_t compute_params_mem_size(ggml_type wtype) = 0;
@@ -83,7 +83,7 @@ namespace NN {
         // mapping tensor struct to buff
         virtual void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) = 0;
 
-        virtual struct ggml_tensor *forward(vallex_compute_context *ctx, Ts... Args) = 0;
+        virtual TReturn forward(vallex_compute_context *ctx, TArgs... Args) = 0;
     };
 }
 
@@ -119,4 +119,7 @@ struct ggml_tensor *ggml_vallex_layer_norm(
         struct ggml_tensor *bias,
         float eps
 );
+
+struct ggml_tensor *ggml_vallex_dropout(struct ggml_context *ctx, struct ggml_tensor *src, float p);
+
 #endif

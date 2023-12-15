@@ -7,116 +7,116 @@
 #include "vector"
 
 
-class LayerNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
-public:
-    LayerNorm(
-            struct ggml_tensor *normalized_shape,
-            float eps,
-            bool elementwise_affine
-    ) {
-        this->eps = eps;
-        this->elementwise_affine = elementwise_affine;
-        this->normalized_shape = normalized_shape;
-//        if self.elementwise_affine:
-//        self.weight = nn.Parameter(
-//                torch.empty(self.normalized_shape, **factory_kwargs)
-//        )
-//        self.bias = nn.Parameter(
-//                torch.empty(self.normalized_shape, **factory_kwargs)
-//        )
-//        else:
-//        self.register_parameter("weight", None)
-//        self.register_parameter("bias", None)
+//class LayerNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
+//public:
+//    LayerNorm(
+//            struct ggml_tensor *normalized_shape,
+//            float eps,
+//            bool elementwise_affine
+//    ) {
+//        this->eps = eps;
+//        this->elementwise_affine = elementwise_affine;
+//        this->normalized_shape = normalized_shape;
+////        if self.elementwise_affine:
+////        self.weight = nn.Parameter(
+////                torch.empty(self.normalized_shape, **factory_kwargs)
+////        )
+////        self.bias = nn.Parameter(
+////                torch.empty(self.normalized_shape, **factory_kwargs)
+////        )
+////        else:
+////        self.register_parameter("weight", None)
+////        self.register_parameter("bias", None)
+//
+//    };
+//
+//    size_t compute_params_mem_size(ggml_type wtype) override {
+//        return 0;
+//    };
+//
+//    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
+//
+//    };
+//
+//    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
+//
+//    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
+//        if (ggml_nelements(input) == 2) {
+//            auto x = ggml_view_1d(ctx->context, input, 1, 0);
+//            embedding = ggml_view_1d(ctx->context, input, 1, sizeof(float));
+//            return ggml_vallex_layer_norm(ctx->context, x, this->normalized_shape, this->weight, this->bias, this->eps);
+//        }
+//        GGML_ASSERT(embedding == nullptr);
+//        return ggml_vallex_layer_norm(ctx->context, input, this->normalized_shape, this->weight, this->bias, this->eps);
+//    };
+//    struct ggml_tensor *normalized_shape;
+//    float eps;
+//    bool elementwise_affine;
+//    struct ggml_tensor *weight;
+//    struct ggml_tensor *bias;
+//};
+//
+//class AdaptiveLayerNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
+//public:
+//    AdaptiveLayerNorm(int64_t d_model, NN::Module<struct ggml_tensor *, struct ggml_tensor *> norm) {
+//
+//    };
+//
+//    size_t compute_params_mem_size(ggml_type wtype) override {
+//        return 0;
+//    };
+//
+//    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
+//
+//    };
+//
+//    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
+//
+//    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
+//
+//        return nullptr;
+//    };
+//
+//};
+//
+//class BasicNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
+//    size_t compute_params_mem_size(ggml_type wtype) override {
+//        return 0;
+//    };
+//
+//    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
+//
+//    };
+//
+//    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
+//
+//    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
+//
+//        return nullptr;
+//    };
+//};
 
-    };
+//class BalancedBasicNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
+//public:
+//    BalancedBasicNorm() {};
+//
+//    size_t compute_params_mem_size(ggml_type wtype) override {
+//        return 0;
+//    };
+//
+//    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
+//
+//    };
+//
+//    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
+//
+//    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
+//
+//        return nullptr;
+//    };
+//};
 
-    size_t compute_params_mem_size(ggml_type wtype) override {
-        return 0;
-    };
-
-    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
-
-    };
-
-    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
-
-    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
-        if (ggml_nelements(input) == 2) {
-            auto x = ggml_view_1d(ctx->context, input, 1, 0);
-            embedding = ggml_view_1d(ctx->context, input, 1, sizeof(float));
-            return ggml_vallex_layer_norm(ctx->context, x, this->normalized_shape, this->weight, this->bias, this->eps);
-        }
-        GGML_ASSERT(embedding == nullptr);
-        return ggml_vallex_layer_norm(ctx->context, input, this->normalized_shape, this->weight, this->bias, this->eps);
-    };
-    struct ggml_tensor *normalized_shape;
-    float eps;
-    bool elementwise_affine;
-    struct ggml_tensor *weight;
-    struct ggml_tensor *bias;
-};
-
-class AdaptiveLayerNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
-public:
-    AdaptiveLayerNorm(int64_t d_model, NN::Module<struct ggml_tensor *, struct ggml_tensor *> norm) {
-
-    };
-
-    size_t compute_params_mem_size(ggml_type wtype) override {
-        return 0;
-    };
-
-    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
-
-    };
-
-    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
-
-    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
-
-        return nullptr;
-    };
-
-};
-
-class BasicNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
-    size_t compute_params_mem_size(ggml_type wtype) override {
-        return 0;
-    };
-
-    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
-
-    };
-
-    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
-
-    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
-
-        return nullptr;
-    };
-};
-
-class BalancedBasicNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
-public:
-    BalancedBasicNorm() {};
-
-    size_t compute_params_mem_size(ggml_type wtype) override {
-        return 0;
-    };
-
-    void init_params(struct ggml_context *ctx, ggml_type wtype) override {
-
-    };
-
-    void mapping_tensor(std::map<std::string, struct ggml_tensor *> &tensors, std::string prefix) override {};
-
-    struct ggml_tensor *forward(vallex_compute_context *ctx, ggml_tensor *input, ggml_tensor *embedding) override {
-
-        return nullptr;
-    };
-};
-
-class IdentityNorm : public NN::Module<ggml_tensor *, ggml_tensor *> {
+class IdentityNorm : public NN::Module<ggml_tensor *, ggml_tensor *, ggml_tensor *> {
 public:
     IdentityNorm() {};
 
@@ -136,15 +136,16 @@ public:
     };
 };
 
-union Norm {
-    LayerNorm layerNorm;
-    AdaptiveLayerNorm adaptiveLayerNorm;
-    BalancedBasicNorm balancedBasicNorm;
-    IdentityNorm identityNorm;
-};
+//union Norm {
+//    LayerNorm layerNorm;
+//    AdaptiveLayerNorm adaptiveLayerNorm;
+//    BalancedBasicNorm balancedBasicNorm;
+//    IdentityNorm identityNorm;
+//};
 
 class TransformerEncoderLayer
         : public NN::Module<
+                ggml_tensor *,
                 /*src: Tensor,*/                                    ggml_tensor *,
                 /*src_mask: Optional[Tensor] = None,*/              ggml_tensor *,
                 /*src_key_padding_mask: Optional[Tensor] = None,*/  ggml_tensor *
@@ -207,13 +208,13 @@ private:
             ggml_tensor *key_padding_mask
     );
 
-    struct ggml_tensor *multihead_attention_block(
-            vallex_compute_context *ctx,
-            ggml_tensor *x,
-            ggml_tensor *mem,
-            ggml_tensor *attn_mask,
-            ggml_tensor *key_padding_mask
-    );
+//    struct ggml_tensor *multihead_attention_block(
+//            vallex_compute_context *ctx,
+//            ggml_tensor *x,
+//            ggml_tensor *mem,
+//            ggml_tensor *attn_mask,
+//            ggml_tensor *key_padding_mask
+//    );
 
     struct ggml_tensor *feed_forward_block(vallex_compute_context *ctx, ggml_tensor *x);
 };
@@ -221,6 +222,7 @@ private:
 
 class TransformerEncoder :
         public NN::Module<
+                ggml_tensor *,
                 /*src: Tensor,*/                                    ggml_tensor *,
                 /*mask: Optional[Tensor] = None,*/                  ggml_tensor *,
                 /*src_key_padding_mask: Optional[Tensor] = None,*/  ggml_tensor *,
@@ -256,6 +258,7 @@ public:
 
     std::vector<TransformerEncoderLayer> layers;
     int64_t num_layers;
+//    Norm norm1;
 };
 
 #endif

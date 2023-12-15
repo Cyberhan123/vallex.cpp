@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include "common.h"
 
 VallexGlobalContext::VallexGlobalContext(size_t n_tensors, size_t buffer_size) {
@@ -378,3 +379,37 @@ struct ggml_tensor *ggml_vallex_layer_norm(
 
     return x;
 }
+
+static void
+ggml_vallex_dropout_impl(struct ggml_tensor *dst, const struct ggml_tensor *src, int ith, int nth, void *userdata) {
+    GGML_ASSERT(userdata != nullptr);
+    GGML_ASSERT(ggml_are_same_shape(dst, src));
+    GGML_ASSERT(ggml_is_contiguous(dst));
+    GGML_ASSERT(ggml_is_contiguous(src));
+
+    const float *src_data = ggml_get_data_f32(src);
+    float *dst_data = ggml_get_data_f32(dst);
+
+    const int ne = (int) ggml_nelements(dst);
+    const int dr = (ne + nth - 1) / nth;
+    const int ie0 = dr * ith;
+    const int ie1 = std::min(ie0 + dr, ne);
+
+    const float p = *((float *) userdata);
+
+    const ggml_vallex_mul_num_params *params = (ggml_vallex_mul_num_params *) userdata;
+    std::default_random_engine generator;
+    std::uniform_real_distribution<float> distribution(0.0, 1.0);
+    for (int i = ie0; i < ie1; ++i) {
+        auto randNum = distribution(generator);
+        if (randNum < p) {
+            dst_data[i] = 0.0;
+        } else {
+            dst_data[i] = src_data[i];
+        }
+    }
+}
+
+struct ggml_tensor *ggml_vallex_dropout(struct ggml_context *ctx, struct ggml_tensor *src, float p) {
+    return ggml_map_custom1(ctx, src, ggml_vallex_dropout_impl, GGML_N_TASKS_MAX, &p);
+};
